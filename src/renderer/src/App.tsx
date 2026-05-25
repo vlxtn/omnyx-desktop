@@ -84,7 +84,9 @@ export default function App() {
   const loadTasks = useCallback(async () => {
     try {
       const data = await getTasks();
-      setTasks(data.filter(t => t.status === "pending" || t.status === "in_progress"));
+      const filtered = data.filter(t => t.status === "pending" || t.status === "in_progress");
+      setTasks(filtered);
+      try { localStorage.setItem("omnyx_desktop_tasks_cache", JSON.stringify(filtered)); } catch {}
     } catch (e) {
       console.error("[loadTasks]", e);
     }
@@ -94,6 +96,19 @@ export default function App() {
     const token = localStorage.getItem("omnyx_token");
     if (token) {
       setView("chat");
+      // Afficher les tâches cachées immédiatement
+      try {
+        const cachedTasks = localStorage.getItem("omnyx_desktop_tasks_cache");
+        if (cachedTasks) setTasks(JSON.parse(cachedTasks));
+      } catch {}
+      // Appliquer la langue depuis le cache profil
+      try {
+        const cachedProfile = localStorage.getItem("omnyx_desktop_profile_cache");
+        if (cachedProfile) {
+          const p = JSON.parse(cachedProfile);
+          if (p.language) setLanguage(p.language);
+        }
+      } catch {}
       // Sync raccourci depuis le profil utilisateur
       api.get("/api/auth/me").then(({ data }) => {
         if (data.companion_shortcut) {
@@ -101,6 +116,7 @@ export default function App() {
           window.api?.updateShortcut(data.companion_shortcut);
         }
         setLanguage(data.language || "fr");
+        try { localStorage.setItem("omnyx_desktop_profile_cache", JSON.stringify(data)); } catch {}
       }).catch(() => {});
     }
     // Chargement des apps installées en arrière-plan
@@ -132,13 +148,6 @@ export default function App() {
       const el = document.querySelector(".ao-window") as HTMLElement | null;
       if (el) { el.style.animation = "none"; el.offsetHeight; el.style.animation = ""; }
       setDismissedSuggestions(new Set());
-      // Rafraîchir la langue à chaque ouverture
-      const token = localStorage.getItem("omnyx_token");
-      if (token) {
-        api.get("/api/auth/me").then(({ data }) => {
-          setLanguage(data.language || "fr");
-        }).catch(() => {});
-      }
     });
     // Détecter le contexte via titre + URL
     // @ts-ignore
