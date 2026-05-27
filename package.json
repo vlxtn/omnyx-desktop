@@ -8,14 +8,15 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "pack": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:all": "npm run build && electron-builder --win --mac"
+    "dist:win": "npm run build && electron-builder --win --publish always",
+    "dist:mac": "npm run build && electron-builder --mac --publish always",
+    "dist:all": "npm run build && electron-builder --win --mac --publish always"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
     "axios": "^1.6.0",
+    "electron-updater": "^6.8.3",
     "lucide-react": "^1.16.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
@@ -85,6 +86,11 @@
     "linux": {
       "target": "AppImage",
       "icon": "build-assets/icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "vlxtn",
+      "repo": "omnyx-desktop"
     }
   }
 }

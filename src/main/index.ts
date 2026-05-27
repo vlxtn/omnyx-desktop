@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, ipcMain, shell, clipboard, Notification } from "electron";
+import { autoUpdater } from "electron-updater";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { registerSystemHandlers, getActiveBrowserUrl } from "./system";
@@ -237,6 +238,18 @@ app.whenReady().then(() => {
   });
 
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createCommandWindow(); });
+
+  // Auto-update — vérifie GitHub Releases au démarrage
+  if (!is.dev) {
+    autoUpdater.checkForUpdates();
+    autoUpdater.on("update-downloaded", (info) => {
+      new Notification({
+        title: "Omnyx — Mise à jour prête",
+        body: `Version ${info.version} sera installée au prochain lancement.`,
+      }).show();
+      autoUpdater.quitAndInstall(false, true);
+    });
+  }
 });
 
 app.on("will-quit", () => { globalShortcut.unregisterAll(); });
