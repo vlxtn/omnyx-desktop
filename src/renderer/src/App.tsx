@@ -5,6 +5,7 @@ import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight,
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
 import { sendMessage, sendMessageStream, analyzeContent, login, getTasks, completeTask, createTask, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api } from "./api";
+import { fetchStale } from "./stale";
 import { detectContext, AppContext } from "./contexts";
 import { generateSuggestions } from "./suggestions";
 import ExecutivePanel from "./ExecutivePanel";
@@ -686,8 +687,8 @@ export default function App() {
             </button>
             {/* Clock — Historique */}
             <button className="no-drag ao-btn" title="Historique"
-              onClick={async () => {
-                if (!historyOpen) { try { const data = await getConversations(); setConversations(data); } catch {} }
+              onClick={() => {
+                if (!historyOpen) fetchStale<Conversation[]>("/api/chat/conversations", setConversations);
                 setHistoryOpen(v => !v);
               }}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: historyOpen ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
