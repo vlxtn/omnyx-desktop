@@ -90,7 +90,8 @@
     "publish": {
       "provider": "github",
       "owner": "vlxtn",
-      "repo": "omnyx-desktop"
+      "repo": "omnyx-desktop",
+      "releaseType": "release"
     }
   }
 }
