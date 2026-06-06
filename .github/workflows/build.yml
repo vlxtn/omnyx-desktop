@@ -21,10 +21,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build & publish Windows
+      - name: Build
+        run: npm run build
+
+      - name: Publish Windows
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: npm run dist:win -- --publish always
+        run: npx electron-builder --win --publish always
 
   build-mac:
     runs-on: macos-latest
@@ -38,7 +41,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build & publish Mac
+      - name: Build
+        run: npm run build
+
+      - name: Publish Mac
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: npm run dist:mac -- --publish always
+        run: npx electron-builder --mac --publish always
