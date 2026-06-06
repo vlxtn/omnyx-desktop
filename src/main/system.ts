@@ -61,56 +61,113 @@ Write-Output "TITLE="`;
 export function registerSystemHandlers(ipcMain: IpcMain, shell: Shell): void {
 
 
-  // Get browser URL + page content (works with authenticated pages)
+  // Get browser URL — plusieurs méthodes en cascade
   ipcMain.handle("get-browser-url", async () => {
     const script = `
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName Microsoft.VisualBasic
-$procs = @("chrome","msedge","firefox","brave","opera","vivaldi","arc","thorium","waterfox","librewolf","floorp","zen")
-foreach ($name in $procs) {
-  $win = Get-Process $name -EA SilentlyContinue | Where-Object {$_.MainWindowHandle -ne [IntPtr]::Zero} | Select-Object -First 1
-  if ($win) {
-    [Microsoft.VisualBasic.Interaction]::AppActivate($win.Id)
-    Start-Sleep -Milliseconds 400
-    # Vider le presse-papier avant de capturer
-    [System.Windows.Forms.Clipboard]::Clear()
-    # Récupérer l'URL
-    [System.Windows.Forms.SendKeys]::SendWait("^l")
-    Start-Sleep -Milliseconds 250
-    [System.Windows.Forms.SendKeys]::SendWait("^c")
-    Start-Sleep -Milliseconds 250
-    $url = [System.Windows.Forms.Clipboard]::GetText()
-    # Fermer la barre d'adresse et capturer le contenu
-    [System.Windows.Forms.SendKeys]::SendWait("{ESCAPE}")
-    Start-Sleep -Milliseconds 300
-    [System.Windows.Forms.Clipboard]::Clear()
-    [System.Windows.Forms.SendKeys]::SendWait("^a")
-    Start-Sleep -Milliseconds 400
-    [System.Windows.Forms.SendKeys]::SendWait("^c")
-    Start-Sleep -Milliseconds 400
-    $content = [System.Windows.Forms.Clipboard]::GetText()
-    Write-Output "===URL==="
-    Write-Output $url
-    Write-Output "===CONTENT==="
-    Write-Output $content
-    exit
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+"@
+
+$browsers = @("chrome","msedge","firefox","brave","opera","vivaldi","arc","thorium","waterfox","librewolf","floorp","zen")
+$url = ""
+$content = ""
+
+foreach ($name in $browsers) {
+  $proc = Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+  if (-not $proc) { continue }
+
+  $hwnd = $proc.MainWindowHandle
+
+  # Methode 1 : UIAutomation sur tous les types de controles (Edit, Custom, Document)
+  try {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+    # Chercher tous les patterns Value dans les descendants
+    $conds = @(
+      [System.Windows.Automation.ControlType]::Edit,
+      [System.Windows.Automation.ControlType]::Custom,
+      [System.Windows.Automation.ControlType]::ComboBox
+    )
+    foreach ($ct in $conds) {
+      $cond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty, $ct)
+      $elements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+      foreach ($el in $elements) {
+        try {
+          $vp = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+          $val = $vp.Current.Value
+          if ($val -match "^https?://") { $url = $val; break }
+        } catch {}
+      }
+      if ($url) { break }
+    }
+  } catch {}
+
+  # Methode 2 : SendKeys Ctrl+L si UIAutomation n'a rien donne
+  if (-not $url) {
+    try {
+      [Win32]::SetForegroundWindow($hwnd) | Out-Null
+      Start-Sleep -Milliseconds 600
+      [System.Windows.Forms.Clipboard]::Clear()
+      [System.Windows.Forms.SendKeys]::SendWait("^l")
+      Start-Sleep -Milliseconds 400
+      [System.Windows.Forms.SendKeys]::SendWait("^c")
+      Start-Sleep -Milliseconds 400
+      $clip = [System.Windows.Forms.Clipboard]::GetText()
+      if ($clip -match "^https?://") { $url = $clip.Trim() }
+      [System.Windows.Forms.SendKeys]::SendWait("{ESCAPE}")
+      Start-Sleep -Milliseconds 200
+    } catch {}
+  }
+
+  # Methode 3 : titre de fenetre comme dernier recours (extrait domaine)
+  if (-not $url) {
+    $title = $proc.MainWindowTitle
+    if ($title -match "[-|] (https?://\S+)") { $url = $Matches[1] }
+  }
+
+  if ($url) {
+    # Tenter de recuperer le contenu de la page
+    try {
+      [Win32]::SetForegroundWindow($hwnd) | Out-Null
+      Start-Sleep -Milliseconds 300
+      [System.Windows.Forms.Clipboard]::Clear()
+      [System.Windows.Forms.SendKeys]::SendWait("^a")
+      Start-Sleep -Milliseconds 400
+      [System.Windows.Forms.SendKeys]::SendWait("^c")
+      Start-Sleep -Milliseconds 400
+      $content = [System.Windows.Forms.Clipboard]::GetText()
+    } catch {}
+    break
   }
 }
+
 Write-Output "===URL==="
-Write-Output ""
+Write-Output $url
 Write-Output "===CONTENT==="
-Write-Output ""`;
+Write-Output $content`;
+
     try {
       const tmp = path.join(os.tmpdir(), "ao_browser_url.ps1");
       fs.writeFileSync(tmp, script, "utf8");
-      const { stdout } = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmp}"`, { timeout: 8000 });
-      const urlMatch = stdout.match(/===URL===\r?\n(.+)\r?\n/);
+      const { stdout } = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tmp}"`, { timeout: 10000 });
+      const urlMatch = stdout.match(/===URL===\r?\n(.*)\r?\n/);
       const contentMatch = stdout.match(/===CONTENT===\r?\n([\s\S]*)/);
-      return JSON.stringify({
-        url: urlMatch ? urlMatch[1].trim() : "",
-        content: contentMatch ? contentMatch[1].trim().slice(0, 20000) : "",
-      });
-    } catch { return JSON.stringify({ url: "", content: "" }); }
+      const url = urlMatch ? urlMatch[1].trim() : "";
+      const content = contentMatch ? contentMatch[1].trim().slice(0, 20000) : "";
+      console.log(`[get-browser-url] url=${url.slice(0, 80)} content=${content.length}chars`);
+      return JSON.stringify({ url, content });
+    } catch (e) {
+      console.error("[get-browser-url] error:", e);
+      return JSON.stringify({ url: "", content: "" });
+    }
   });
 
   // List all installed apps for autocomplete

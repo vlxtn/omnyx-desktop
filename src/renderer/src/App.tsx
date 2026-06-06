@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks } from "lucide-react";
+import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2 } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
-import { sendMessage, sendMessageStream, analyzeContent, login, getTasks, completeTask, createTask, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api } from "./api";
+import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
 import { fetchStale } from "./stale";
 import { detectContext, AppContext } from "./contexts";
 import { generateSuggestions } from "./suggestions";
@@ -14,11 +14,20 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   ts?: string;
+  attachment?: string;
 }
 
 function now() { return new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); }
 
 type ViewState = "login" | "chat";
+
+const THEMES = {
+  violet:   { label:"Violet",    border:"rgba(124,58,237,0.5)",   shadowRing:"rgba(124,58,237,0.2)",  headerBg:"rgba(99,102,241,0.12)", headerBgMid:"rgba(139,92,246,0.06)",  headerBorder:"rgba(124,58,237,0.2)",  userMsg:"linear-gradient(135deg,#4f46e5,#7c3aed)", accent:"#6366f1", accentLight:"#a5b4fc" },
+  midnight: { label:"Minuit",    border:"rgba(29,78,216,0.5)",    shadowRing:"rgba(29,78,216,0.2)",   headerBg:"rgba(37,99,235,0.12)",  headerBgMid:"rgba(29,78,216,0.06)",   headerBorder:"rgba(29,78,216,0.2)",   userMsg:"linear-gradient(135deg,#1e3a8a,#1d4ed8)", accent:"#2563eb", accentLight:"#93c5fd" },
+  emerald:  { label:"Émeraude",  border:"rgba(5,150,105,0.5)",    shadowRing:"rgba(5,150,105,0.2)",   headerBg:"rgba(5,150,105,0.1)",   headerBgMid:"rgba(16,185,129,0.05)",  headerBorder:"rgba(5,150,105,0.2)",   userMsg:"linear-gradient(135deg,#065f46,#059669)", accent:"#059669", accentLight:"#6ee7b7" },
+  rose:     { label:"Rose",      border:"rgba(190,18,60,0.5)",    shadowRing:"rgba(190,18,60,0.2)",   headerBg:"rgba(190,18,60,0.1)",   headerBgMid:"rgba(236,72,153,0.05)",  headerBorder:"rgba(190,18,60,0.2)",   userMsg:"linear-gradient(135deg,#9d174d,#be185d)", accent:"#be185d", accentLight:"#f9a8d4" },
+} as const;
+type ThemeKey = keyof typeof THEMES;
 
 const QUICK_ACTION_DEFS = [
   { icon: Globe,      color: "#6366f1", key: "quick_url",  prefixKey: "prefix_url"  },
@@ -60,6 +69,22 @@ export default function App() {
     applyWindowSize(next);
     return next;
   });
+  const toggleCompact = () => {
+    setCompactMode(v => {
+      const next = !v;
+      if (next) {
+        // @ts-ignore
+        window.api?.resizeWindow(isVertical ? 420 : 660, 80);
+        // @ts-ignore
+        window.api?.setResizable(false);
+      } else {
+        // @ts-ignore
+        window.api?.setResizable(true);
+        applyWindowSize(layout);
+      }
+      return next;
+    });
+  };
   const isVertical = layout === "vertical";
   const [searchLoading, setSearchLoading] = useState(false);
   const [fileResults, setFileResults] = useState<string[]>([]);
@@ -78,6 +103,78 @@ export default function App() {
   const [installedApps, setInstalledApps] = useState<{Name: string; AppID: string}[]>([]);
   const [suggestions, setSuggestions] = useState<{Name: string; AppID: string}[]>([]);
   const [language, setLanguage] = useState("fr");
+  const [attachedFile, setAttachedFile] = useState<{ name: string; type: "image" | "text"; content?: string; base64?: string; mime_type?: string } | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
+  const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const showTip = (e: React.MouseEvent, text: string) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTooltip({ text, x: r.left + r.width / 2, y: r.bottom + 6 }); };
+  const hideTip = () => setTooltip(null);
+  const [detectedText, setDetectedText] = useState<string | null>(null);
+  const [autoDetectMode, setAutoDetectMode] = useState(false);
+  const [writeForMeMode, setWriteForMeMode] = useState(false);
+  const [writeForMePrompt, setWriteForMePrompt] = useState("");
+  const [writeForMeResult, setWriteForMeResult] = useState("");
+  const [writeForMeLoading, setWriteForMeLoading] = useState(false);
+  const [writeFormat, setWriteFormat] = useState("email");
+  const [writeTone, setWriteTone] = useState("professionnel");
+  const [writeForMeAttach, setWriteForMeAttach] = useState<{ name: string; content: string } | null>(null);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [capturingShortcut, setCapturingShortcut] = useState(false);
+  const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+Space");
+  const [pendingShortcut, setPendingShortcut] = useState("");
+  const [compactMode, setCompactMode] = useState(false);
+  const [agentTone, setAgentTone] = useState("equilibre");
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
+  const [pinnedMessages, setPinnedMessages] = useState<{content: string; ts?: string}[]>(() => {
+    try { return JSON.parse(localStorage.getItem("omnyx_pinned") || "[]"); } catch { return []; }
+  });
+  const [showPinned, setShowPinned] = useState(false);
+  const [theme, setTheme] = useState<ThemeKey>(() => (localStorage.getItem("omnyx_theme") as ThemeKey) || "violet");
+  const [timerOpen, setTimerOpen] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(25 * 60);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerLabel, setTimerLabel] = useState("Pomodoro");
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [timerCustom, setTimerCustom] = useState("");
+  const [timerTotal, setTimerTotal] = useState(25 * 60);
+  const th = THEMES[theme];
+  const flashSaved = () => { setSavedOk(true); setTimeout(() => setSavedOk(false), 1800); };
+  const saveProfile = async (patch: Record<string, string>) => {
+    setSavingSettings(true);
+    try {
+      await api.patch("/api/auth/profile", patch);
+      try {
+        const cached = localStorage.getItem("omnyx_desktop_profile_cache");
+        if (cached) {
+          const p = JSON.parse(cached);
+          localStorage.setItem("omnyx_desktop_profile_cache", JSON.stringify({ ...p, ...patch }));
+        }
+      } catch {}
+      flashSaved();
+    } catch {}
+    finally { setSavingSettings(false); }
+  };
+  const exportConversation = () => {
+    if (messages.length === 0) return;
+    const lines: string[] = [`# Conversation Omnyx — ${new Date().toLocaleDateString("fr-FR")}\n`];
+    for (const m of messages) {
+      const role = m.role === "user" ? "**Toi**" : "**Omnyx**";
+      const ts = m.ts ? ` _(${m.ts})_` : "";
+      lines.push(`### ${role}${ts}\n\n${m.content}\n`);
+    }
+    const blob = new Blob([lines.join("\n---\n\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `omnyx-${new Date().toISOString().slice(0, 10)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const writeForMeFileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const tr = useT(language);
@@ -93,30 +190,55 @@ export default function App() {
     }
   }, []);
 
+  // Sauvegarder la conversation active entre les sessions
+  useEffect(() => {
+    if (activeConversationId) {
+      localStorage.setItem("omnyx_companion_conv_id", activeConversationId);
+    }
+  }, [activeConversationId]);
+
   useEffect(() => {
     const token = localStorage.getItem("omnyx_token");
     if (token) {
       setView("chat");
+      // Restaurer la dernière conversation
+      const savedConvId = localStorage.getItem("omnyx_companion_conv_id");
+      if (savedConvId) {
+        setActiveConversationId(savedConvId);
+        getConversationMessages(savedConvId).then(msgs => {
+          if (msgs.length > 0) {
+            setMessages(msgs.slice(-30).map(m => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              ts: m.created_at ? new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : undefined,
+            })));
+          }
+        }).catch(() => {});
+      }
       // Afficher les tâches cachées immédiatement
       try {
         const cachedTasks = localStorage.getItem("omnyx_desktop_tasks_cache");
         if (cachedTasks) setTasks(JSON.parse(cachedTasks));
       } catch {}
-      // Appliquer la langue depuis le cache profil
+      // Appliquer la langue + ton depuis le cache profil
       try {
         const cachedProfile = localStorage.getItem("omnyx_desktop_profile_cache");
         if (cachedProfile) {
           const p = JSON.parse(cachedProfile);
           if (p.language) setLanguage(p.language);
+          if (p.agent_tone) setAgentTone(p.agent_tone);
+          if (p.companion_shortcut) setCurrentShortcut(p.companion_shortcut);
         }
       } catch {}
-      // Sync raccourci depuis le profil utilisateur
+      // Sync profil depuis le backend
       api.get("/api/auth/me").then(({ data }) => {
         if (data.companion_shortcut) {
           // @ts-ignore
           window.api?.updateShortcut(data.companion_shortcut);
+          setCurrentShortcut(data.companion_shortcut);
         }
         setLanguage(data.language || "fr");
+        if (data.agent_tone) setAgentTone(data.agent_tone);
         try { localStorage.setItem("omnyx_desktop_profile_cache", JSON.stringify(data)); } catch {}
       }).catch(() => {});
     }
@@ -189,6 +311,19 @@ export default function App() {
           .catch(() => {});
       });
     });
+
+    // Détection image dans le presse-papiers
+    // @ts-ignore
+    window.api?.onClipboardImage?.((base64: string) => {
+      setPendingClipboardImage(base64);
+    });
+
+    // Détection texte sélectionné
+    // @ts-ignore
+    window.api?.onTextSelected?.((text: string) => {
+      setDetectedText(text);
+      setWriteForMeMode(false);
+    });
   }, []);
 
 
@@ -207,6 +342,30 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Capture de raccourci clavier
+  useEffect(() => {
+    if (!capturingShortcut) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const modifiers: string[] = [];
+      if (e.ctrlKey) modifiers.push("Control");
+      if (e.shiftKey) modifiers.push("Shift");
+      if (e.altKey) modifiers.push("Alt");
+      if (e.metaKey) modifiers.push("Meta");
+      const IGNORED = ["Control", "Shift", "Alt", "Meta", "Escape", "Tab"];
+      if (IGNORED.includes(e.key)) return;
+      const KEY_MAP: Record<string, string> = { " ": "Space", "ArrowUp": "Up", "ArrowDown": "Down", "ArrowLeft": "Left", "ArrowRight": "Right" };
+      const key = KEY_MAP[e.key] || (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+      if (modifiers.length === 0) return;
+      const shortcut = [...modifiers, key].join("+");
+      setPendingShortcut(shortcut);
+      setCapturingShortcut(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [capturingShortcut]);
 
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -474,22 +633,49 @@ export default function App() {
     if (!text || loading) return;
     setInput("");
 
-    const userMsg: Message = { role: "user", content: text, ts: now() };
+    const currentAttachment = attachedFile;
+    setAttachedFile(null);
+
+    let apiMessage = text;
+
+    if (currentAttachment?.type === "text" && currentAttachment.content) {
+      apiMessage = `${text}\n\n📎 ${currentAttachment.name}:\n\`\`\`\n${currentAttachment.content.slice(0, 8000)}\n\`\`\``;
+    }
+
+    const userMsg: Message = { role: "user", content: text, ts: now(), attachment: currentAttachment?.name };
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
     try {
-      // 1. Intention locale rapide (ouvrir app/URL)
-      const intent = await handleIntent(text);
-      if (intent.handled) {
-        setMessages(prev => [...prev, { role: "assistant", content: intent.result ?? "" }]);
-        setLoading(false);
-        setTimeout(() => inputRef.current?.focus(), 50);
+      // 1. Intention locale rapide (ouvrir app/URL) — seulement sans fichier joint
+      if (!currentAttachment) {
+        const intent = await handleIntent(text);
+        if (intent.handled) {
+          setMessages(prev => [...prev, { role: "assistant", content: intent.result ?? "" }]);
+          setLoading(false);
+          setTimeout(() => inputRef.current?.focus(), 50);
+          return;
+        }
+      }
+
+      // 2. Image attachée → endpoint dédié
+      if (currentAttachment?.type === "image" && currentAttachment.base64) {
+        try {
+          const result = await analyzeImage(currentAttachment.base64, currentAttachment.mime_type || "image/png", text || "Analyse cette image.", activeConversationId);
+          setMessages(prev => [...prev, { role: "assistant", content: result.result || "" }]);
+        } catch (e: any) {
+          const detail = e?.response?.data?.detail || e?.message || "Erreur inconnue";
+          const status = e?.response?.status;
+          setMessages(prev => [...prev, { role: "assistant", content: `Erreur${status ? ` ${status}` : ""} : ${detail}` }]);
+        } finally {
+          setLoading(false);
+          setTimeout(() => inputRef.current?.focus(), 50);
+        }
         return;
       }
 
-      // 2. Si une page a été analysée, toute question suivante utilise son contenu comme contexte
-      if (lastPageRef.current) {
+      // 3. Si une page a été analysée, toute question suivante utilise son contenu comme contexte
+      if (lastPageRef.current && !currentAttachment) {
         const { content, url } = lastPageRef.current;
         const data = await analyzeContent(content, text, url || undefined);
         setMessages(prev => [...prev, { role: "assistant", content: data.result || "" }]);
@@ -504,7 +690,7 @@ export default function App() {
       let fullContent = "";
       let doneData: { actions?: { action_type: string; data: Record<string, string> }[]; clean_content?: string } | null = null;
 
-      for await (const event of sendMessageStream(text, "executive", activeConversationId)) {
+      for await (const event of sendMessageStream(apiMessage, "executive", activeConversationId)) {
         if (event.type === "start" && event.conversation_id) {
           setActiveConversationId(event.conversation_id);
         } else if (event.type === "delta") {
@@ -563,6 +749,54 @@ export default function App() {
     }
   };
 
+  const generateWriteForMe = async () => {
+    if (!writeForMePrompt.trim() || writeForMeLoading) return;
+    setWriteForMeLoading(true);
+    setWriteForMeResult("");
+    const FORMAT_LABELS: Record<string, string> = { email: "un email", message: "un message", post: "un post réseaux sociaux", rapport: "un rapport", autre: "un texte" };
+    const TONE_LABELS: Record<string, string> = { professionnel: "professionnel", decontracte: "décontracté et naturel", creatif: "créatif et original", persuasif: "persuasif et convaincant" };
+    const attachContext = writeForMeAttach
+      ? `\n\nPièce jointe — ${writeForMeAttach.name}:\n\`\`\`\n${writeForMeAttach.content.slice(0, 6000)}\n\`\`\``
+      : "";
+    const prompt = `Rédige ${FORMAT_LABELS[writeFormat]} avec un ton ${TONE_LABELS[writeTone]}. Sujet : ${writeForMePrompt.trim()}${attachContext}\n\nRéponds UNIQUEMENT avec le texte rédigé, sans explication ni introduction.`;
+    let full = "";
+    try {
+      for await (const event of sendMessageStream(prompt, "executive", null)) {
+        if (event.type === "delta") { full += event.content; setWriteForMeResult(full); }
+        else if (event.type === "done" && event.clean_content) { setWriteForMeResult(event.clean_content); full = event.clean_content; }
+      }
+    } catch { setWriteForMeResult("Erreur de génération."); }
+    finally { setWriteForMeLoading(false); }
+  };
+
+  const injectIntoApp = async (text: string) => {
+    // @ts-ignore
+    await window.api?.pasteToActiveApp(text);
+  };
+
+  useEffect(() => {
+    if (timerRunning) {
+      timerIntervalRef.current = setInterval(() => {
+        setTimerSeconds(s => {
+          if (s <= 1) {
+            clearInterval(timerIntervalRef.current!);
+            setTimerRunning(false);
+            // @ts-ignore
+            window.api?.notify("⏱ Omnyx — Timer", `${timerLabel} terminé !`);
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    } else {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    }
+    return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
+  }, [timerRunning, timerLabel]);
+
+  const timerFmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+
   if (view === "login") {
     return (
       <div style={styles.overlay}>
@@ -594,29 +828,43 @@ export default function App() {
 
   return (
     <div style={styles.overlay}>
+      {tooltip && (
+        <div style={{ position:"fixed", left:tooltip.x, top:tooltip.y, transform:"translateX(-50%)", background:"rgba(10,10,20,0.95)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, padding:"4px 9px", fontSize:10, color:"rgba(255,255,255,0.85)", whiteSpace:"nowrap" as const, zIndex:9999, pointerEvents:"none" as const, boxShadow:"0 4px 12px rgba(0,0,0,0.5)", letterSpacing:"0.02em" }}>
+          {tooltip.text}
+        </div>
+      )}
       <div style={{
         ...styles.window,
+        border: `1px solid ${th.border}`,
+        boxShadow: `0 0 0 1px ${th.shadowRing}, 0 30px 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)`,
         ...(isVertical ? { width: 380, maxHeight: 680, minHeight: 300 } : { width: 660, maxHeight: 500 }),
+        ...(compactMode ? { borderRadius: 8, minHeight: 0 } : {}),
       }} className="ao-window">
         {/* En-tête — zone de déplacement */}
         <div style={{
           ...styles.header,
-          ...(isVertical ? { flexWrap: "wrap" as const, gap: 8 } : {}),
+          background: `linear-gradient(135deg, ${th.headerBg} 0%, ${th.headerBgMid} 50%, transparent 100%)`,
+          borderBottom: `1px solid ${th.headerBorder}`,
+          ...(isVertical && !compactMode ? { flexWrap: "wrap" as const, gap: 8 } : {}),
+          ...(compactMode ? { padding: "12px 14px", gap: 8 } : {}),
         }} className="drag">
           {/* Logo + titre */}
           <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
-            <img src={logoImg} alt="Omnyx" style={{ width:32, height:32, borderRadius:10, objectFit:"cover", flexShrink:0 }} />
-            <span className="ao-logo-text" style={{ fontSize: 14, flexShrink: 0 }}>Omnyx</span>
+            <img src={logoImg} alt="Omnyx" style={{ width:compactMode ? 26 : 32, height:compactMode ? 26 : 32, borderRadius:8, objectFit:"cover", flexShrink:0, transition:"all 0.15s" }} />
+            {!compactMode && <span className="ao-logo-text" style={{ fontSize: 14, flexShrink: 0 }}>Omnyx</span>}
           </div>
-          {/* Toggle layout */}
-          <button className="no-drag" title={isVertical ? "Mode horizontal" : "Mode vertical"}
-            onClick={toggleLayout}
-            style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.08)", cursor:"pointer", flexShrink:0, marginLeft: isVertical ? "auto" : 0 }}>
-            {isVertical
-              ? <PanelTop size={12} color="rgba(255,255,255,0.4)" />
-              : <PanelRight size={12} color="rgba(255,255,255,0.4)" />}
-          </button>
-          <div style={{ flex: 1, position: "relative" as const, ...(isVertical ? { flexBasis:"100%", order: 10 } : {}) }}>
+          {/* Toggle layout — masqué en compact */}
+          {!compactMode && (
+            <button className="no-drag" title=""
+              onClick={toggleLayout}
+              onMouseEnter={e => showTip(e, isVertical ? "Mode horizontal" : "Mode vertical")} onMouseLeave={hideTip}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.08)", cursor:"pointer", flexShrink:0, marginLeft: isVertical ? "auto" : 0 }}>
+              {isVertical
+                ? <PanelTop size={12} color="#7dd3fc" />
+                : <PanelRight size={12} color="#7dd3fc" />}
+            </button>
+          )}
+          <div style={{ flex: 1, position: "relative" as const, display:"flex", alignItems:"center", gap:4, ...(isVertical && !compactMode ? { flexBasis:"100%", order: 10 } : {}) }}>
             <input
               ref={inputRef}
               className="no-drag"
@@ -654,6 +902,48 @@ export default function App() {
               style={styles.mainInput}
               disabled={loading}
             />
+            {/* Bouton expand inline — visible uniquement en compact */}
+            {compactMode && (
+              <button className="no-drag"
+                onClick={toggleCompact}
+                style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"1px solid rgba(99,102,241,0.35)", background:"rgba(99,102,241,0.15)", flexShrink:0 }}>
+                <Maximize2 size={12} color="#a5b4fc" />
+              </button>
+            )}
+            {!compactMode && <button className="no-drag" title=""
+              onMouseEnter={e => showTip(e, "Joindre un fichier")} onMouseLeave={hideTip}
+              onClick={() => {
+                // @ts-ignore
+                window.api?.lockWindow();
+                fileInputRef.current?.click();
+                // Déverrouiller quand le focus revient (dialog fermée ou annulée)
+                const onFocus = () => setTimeout(() => {
+                  // @ts-ignore
+                  window.api?.unlockWindow();
+                }, 300);
+                window.addEventListener("focus", onFocus, { once: true });
+              }}
+              disabled={fileLoading}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor: fileLoading ? "not-allowed" : "pointer", border: attachedFile ? "1px solid rgba(99,102,241,0.4)" : "1px solid rgba(255,255,255,0.07)", background: attachedFile ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", opacity: fileLoading ? 0.5 : 1, flexShrink:0 }}>
+              <Paperclip size={13} color={attachedFile ? "#a5b4fc" : "#c4b5fd"} />
+            </button>}
+            <input ref={fileInputRef} type="file" style={{ display:"none" }}
+              accept="image/*,.pdf,.txt,.md,.csv,.json,.ts,.tsx,.js,.jsx,.py,.html,.css,.xml,.docx"
+              onChange={async (e) => {
+                // @ts-ignore
+                window.api?.unlockWindow();
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setFileLoading(true);
+                try {
+                  const data = await uploadFile(file);
+                  setAttachedFile({ name: data.name, type: data.type, content: data.content, base64: data.base64, mime_type: data.mime_type });
+                } catch { /* silent */ } finally {
+                  setFileLoading(false);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }
+              }}
+            />
             {suggestions.length > 0 && (
               <div style={styles.suggestions}>
                 {suggestions.map((app, i) => (
@@ -677,34 +967,80 @@ export default function App() {
               </div>
             )}
           </div>
-          {/* ── Toolbar groupée ── */}
-          <div style={{ display:"flex", alignItems:"center", gap:2, padding:"3px", borderRadius:10, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", flexShrink:0, ...(isVertical ? { order:11 } : {}) }}>
+          {/* ── Toolbar groupée — masquée en compact ── */}
+          {!compactMode && <div style={{ display:"flex", alignItems:"center", gap:2, padding:"3px", borderRadius:10, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", flexShrink:0, ...(isVertical ? { order:11 } : {}) }}>
             {/* Brain — Executive */}
-            <button className="no-drag ao-btn" title="Mode Executive"
+            <button className="no-drag ao-btn" title=""
               onClick={() => { setBriefing(""); setExecutiveMode(v => !v); }}
+              onMouseEnter={e => showTip(e, "Mode Executive")} onMouseLeave={hideTip}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: executiveMode ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <Brain size={13} color={executiveMode ? "#a5b4fc" : "rgba(255,255,255,0.4)"} />
+              <Brain size={13} color={executiveMode ? "#a5b4fc" : "#818cf8"} />
             </button>
             {/* Clock — Historique */}
-            <button className="no-drag ao-btn" title="Historique"
+            <button className="no-drag ao-btn" title=""
               onClick={() => {
                 if (!historyOpen) fetchStale<Conversation[]>("/api/chat/conversations", setConversations);
                 setHistoryOpen(v => !v);
               }}
+              onMouseEnter={e => showTip(e, "Historique des conversations")} onMouseLeave={hideTip}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: historyOpen ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <Clock size={13} color={historyOpen ? "#a5b4fc" : "rgba(255,255,255,0.4)"} />
+              <Clock size={13} color={historyOpen ? "#a5b4fc" : "#60a5fa"} />
             </button>
             {/* FileText — Coller */}
-            <button className="no-drag" title="Coller du texte"
+            <button className="no-drag" title=""
               onClick={() => setPasteMode(v => !v)}
+              onMouseEnter={e => showTip(e, "Coller & analyser du texte")} onMouseLeave={hideTip}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: pasteMode ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <FileText size={13} color={pasteMode ? "#a5b4fc" : "rgba(255,255,255,0.4)"} />
+              <FileText size={13} color={pasteMode ? "#a5b4fc" : "#22d3ee"} />
             </button>
             {/* BookMarked — Mémoriser */}
-            <button className="no-drag" title="Mémoriser quelque chose"
+            <button className="no-drag" title=""
               onClick={() => { setQuickMemoryMode(v => !v); setPasteMode(false); }}
+              onMouseEnter={e => showTip(e, "Mémoriser quelque chose")} onMouseLeave={hideTip}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: quickMemoryMode ? "rgba(245,158,11,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <Sparkles size={13} color={quickMemoryMode ? "#fcd34d" : "rgba(255,255,255,0.4)"} />
+              <Sparkles size={13} color={quickMemoryMode ? "#fcd34d" : "#fbbf24"} />
+            </button>
+            {/* Camera — Capture d'écran */}
+            <button className="no-drag" title=""
+              onMouseEnter={e => showTip(e, "Capturer & analyser l'écran avec l'IA")} onMouseLeave={hideTip}
+              disabled={loading || fileLoading}
+              onClick={async () => {
+                setFileLoading(true);
+                try {
+                  // @ts-ignore
+                  const result = await window.api?.captureScreen();
+                  if (result?.success && result.base64) {
+                    const blob = await fetch(`data:image/png;base64,${result.base64}`).then(r => r.blob());
+                    const file = new File([blob], "capture-ecran.png", { type: "image/png" });
+                    const data = await uploadFile(file);
+                    setAttachedFile({ name: data.name, type: data.type, content: data.content, base64: data.base64, mime_type: data.mime_type });
+                    setInput(prev => prev || "Analyse cet écran");
+                    setTimeout(() => inputRef.current?.focus(), 100);
+                  }
+                } catch { /* silent */ } finally { setFileLoading(false); }
+              }}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor: (loading || fileLoading) ? "not-allowed" : "pointer", border:"none", background:"transparent", transition:"background 0.15s", opacity: (loading || fileLoading) ? 0.4 : 1 }}>
+              <Camera size={13} color="#f472b6" />
+            </button>
+            {/* MousePointer2 — Détection texte sélectionné */}
+            <button className="no-drag" title=""
+              onMouseEnter={e => showTip(e, autoDetectMode ? "Désactiver la détection de texte" : "Détecter le texte sélectionné")} onMouseLeave={hideTip}
+              onClick={() => {
+                const next = !autoDetectMode;
+                setAutoDetectMode(next);
+                // @ts-ignore
+                window.api?.setAutoDetectText(next);
+                if (!next) setDetectedText(null);
+              }}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: autoDetectMode ? "rgba(16,185,129,0.25)" : "transparent", transition:"background 0.15s" }}>
+              <MousePointer2 size={13} color={autoDetectMode ? "#6ee7b7" : "#34d399"} />
+            </button>
+            {/* PenLine — Écris pour moi */}
+            <button className="no-drag" title=""
+              onMouseEnter={e => showTip(e, "Écris pour moi")} onMouseLeave={hideTip}
+              onClick={() => { setWriteForMeMode(v => !v); setDetectedText(null); setPasteMode(false); setQuickMemoryMode(false); }}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: writeForMeMode ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
+              <PenLine size={13} color={writeForMeMode ? "#a5b4fc" : "#fb923c"} />
             </button>
             {/* Séparateur */}
             <div style={{ width:1, height:14, background:"rgba(255,255,255,0.08)", margin:"0 2px" }}/>
@@ -714,43 +1050,45 @@ export default function App() {
                 <span style={{ fontSize:10, fontWeight:700, color: tasks.some(t => t.priority === "urgent") ? "#f87171" : "#a5b4fc" }}>{tasks.length}</span>
               </div>
             )}
-          </div>
-          <button
+          </div>}
+          {!compactMode && <button
             className="no-drag"
-            title="Analyser la page actuelle"
+            title=""
+            onMouseEnter={e => showTip(e, "Analyser la page actuelle")} onMouseLeave={hideTip}
             disabled={loading}
             style={{ display:"flex", alignItems:"center", justifyContent:"center", width:30, height:30, borderRadius:9, cursor: loading ? "not-allowed" : "pointer", flexShrink:0, border:"1px solid rgba(99,102,241,0.25)", background:"rgba(99,102,241,0.1)", opacity: loading ? 0.4 : 1, transition:"all 0.15s" }}
             onClick={async () => {
               setLoading(true);
               // @ts-ignore
               window.api?.hideWindow();
-              await new Promise(r => setTimeout(r, 600));
+              await new Promise(r => setTimeout(r, 500));
               try {
-                // @ts-ignore
-                const raw: string = await window.api?.getBrowserUrl() || "{}";
-                let pageData: { url?: string; content?: string } = {};
-                try { pageData = JSON.parse(raw); } catch {}
-                const rawUrl = pageData.url || "";
-                const content = (pageData.content || "").trim();
-                const url = /^https?:\/\/(?!localhost|127\.0\.0\.1).+/.test(rawUrl) ? rawUrl : "";
+                // Capture d'écran + URL en parallèle
+                const [screenshotResult, rawBrowser] = await Promise.all([
+                  // @ts-ignore
+                  window.api?.captureScreen().catch(() => null),
+                  // @ts-ignore
+                  window.api?.getBrowserUrl().catch(() => "{}"),
+                ]);
                 // @ts-ignore
                 window.api?.showWindow();
 
-                // Page locale (localhost) → message clair
-                if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(rawUrl)) {
-                  setMessages(prev => [...prev, { role: "assistant" as const, content: "Cette page est locale (localhost) et ne peut pas être analysée. Ouvre une page web externe, puis réessaie." }]);
-                } else if (content.length > 100) {
-                  lastPageRef.current = { content, url };
-                  setMessages(prev => [...prev, { role: "user" as const, content: `${tr("analyze_msg")}${url ? ` : ${url}` : ""}` }]);
-                  const data = await analyzeContent(content, undefined, url || undefined);
-                  setMessages(prev => [...prev, { role: "assistant", content: data.result || "" }]);
-                } else if (url) {
-                  lastPageRef.current = { content: "", url };
-                  setMessages(prev => [...prev, { role: "user" as const, content: `${tr("analyze_msg")} : ${url}` }]);
-                  const data = await analyzeContent("", undefined, url);
-                  setMessages(prev => [...prev, { role: "assistant", content: data.result || "" }]);
+                let pageUrl = "";
+                try {
+                  const parsed = JSON.parse(rawBrowser || "{}");
+                  pageUrl = parsed.url || "";
+                } catch {}
+
+                const userLabel = `Analyse cette page${pageUrl ? ` : ${pageUrl}` : ""}`;
+                setMessages(prev => [...prev, { role: "user" as const, content: userLabel, ts: now() }]);
+
+                // Toujours utiliser la capture d'écran si disponible — fonctionne même sur les pages authentifiées
+                if (screenshotResult?.success && screenshotResult.base64) {
+                  const question = `Analyse en détail ce qui est affiché sur cette page.${pageUrl ? ` URL : ${pageUrl}` : ""} Décris le contenu, les informations clés, le statut, les données importantes, et tout ce qui est pertinent pour l'utilisateur.`;
+                  const result = await analyzeImage(screenshotResult.base64, "image/png", question, activeConversationId);
+                  setMessages(prev => [...prev, { role: "assistant" as const, content: result.result || "", ts: now() }]);
                 } else {
-                  setMessages(prev => [...prev, { role: "assistant" as const, content: "Aucun navigateur détecté. Ouvre Chrome ou Edge sur une vraie page web (pas localhost), puis réessaie." }]);
+                  setMessages(prev => [...prev, { role: "assistant" as const, content: "Impossible de capturer l'écran. Vérifie que Chrome est ouvert et réessaie." }]);
                 }
               } catch (err: unknown) {
                 // @ts-ignore
@@ -761,9 +1099,147 @@ export default function App() {
               } finally { setLoading(false); }
             }}>
             <Search size={13} color="#a5b4fc" />
-          </button>
-          {loading && <div style={styles.spinner} />}
+          </button>}
+          {!compactMode && loading && <div style={styles.spinner} />}
         </div>
+
+        {/* Tout le contenu est masqué en mode compact */}
+        {!compactMode && <>
+
+        {/* Bannière image presse-papiers détectée */}
+        {pendingClipboardImage && (
+          <div style={{ padding:"5px 16px", background:"rgba(139,92,246,0.08)", borderBottom:"1px solid rgba(139,92,246,0.2)", display:"flex", alignItems:"center", gap:8 }}>
+            <Camera size={11} color="#a78bfa" />
+            <span style={{ fontSize:11, color:"#c4b5fd", flex:1 }}>Image copiée détectée</span>
+            <button onClick={async () => {
+              const b64 = pendingClipboardImage;
+              setPendingClipboardImage(null);
+              const blob = await fetch(`data:image/png;base64,${b64}`).then(r => r.blob());
+              const file = new File([blob], "clipboard.png", { type:"image/png" });
+              setFileLoading(true);
+              try {
+                const data = await uploadFile(file);
+                setAttachedFile({ name: data.name, type: data.type, content: data.content, base64: data.base64, mime_type: data.mime_type });
+              } catch {} finally { setFileLoading(false); }
+            }} style={{ background:"rgba(139,92,246,0.2)", border:"1px solid rgba(139,92,246,0.4)", borderRadius:6, padding:"3px 10px", fontSize:10, color:"#c4b5fd", cursor:"pointer" }}>
+              Joindre
+            </button>
+            <button onClick={() => setPendingClipboardImage(null)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:13, padding:0 }}>✕</button>
+          </div>
+        )}
+
+        {/* Panel paramètres */}
+        {shortcutOpen && (
+          <div style={{ padding:"14px 16px", background:"rgba(10,10,22,0.99)", borderBottom:"1px solid rgba(255,255,255,0.07)", display:"flex", flexDirection:"column" as const, gap:16 }}>
+
+            {/* En-tête panneau */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:11, fontWeight:700, color:"rgba(165,180,252,0.6)", letterSpacing:"0.05em" }}>Paramètres</span>
+                {savingSettings && <span style={{ fontSize:10, color:"rgba(165,180,252,0.4)" }}>Enregistrement…</span>}
+                {savedOk && <span style={{ fontSize:10, color:"#34d399", fontWeight:600 }}>✓ Enregistré</span>}
+              </div>
+              <button className="no-drag" onClick={() => { setShortcutOpen(false); setCapturingShortcut(false); setPendingShortcut(""); }}
+                style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.3)", fontSize:16, padding:"0 2px", lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                ✕
+              </button>
+            </div>
+
+            {/* Langue de l'IA */}
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:"rgba(165,180,252,0.45)", textTransform:"uppercase" as const, letterSpacing:"0.09em", marginBottom:8 }}>Langue de l'IA</div>
+              <div style={{ display:"flex", gap:5, flexWrap:"wrap" as const }}>
+                {([
+                  { code:"fr", flag:"🇫🇷", label:"FR" },
+                  { code:"en", flag:"🇬🇧", label:"EN" },
+                  { code:"es", flag:"🇪🇸", label:"ES" },
+                  { code:"de", flag:"🇩🇪", label:"DE" },
+                  { code:"it", flag:"🇮🇹", label:"IT" },
+                  { code:"pt", flag:"🇵🇹", label:"PT" },
+                ]).map(lang => (
+                  <button key={lang.code} className="no-drag"
+                    onClick={() => { setLanguage(lang.code); saveProfile({ language: lang.code }); }}
+                    style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 10px", borderRadius:8, border: language === lang.code ? "1px solid rgba(99,102,241,0.6)" : "1px solid rgba(255,255,255,0.08)", background: language === lang.code ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: language === lang.code ? "#a5b4fc" : "rgba(255,255,255,0.4)", fontSize:12, cursor:"pointer", transition:"all 0.15s", fontFamily:"inherit" }}>
+                    <span>{lang.flag}</span>
+                    <span style={{ fontWeight: language === lang.code ? 700 : 400 }}>{lang.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Ton de l'IA */}
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:"rgba(165,180,252,0.45)", textTransform:"uppercase" as const, letterSpacing:"0.09em", marginBottom:8 }}>Ton de l'IA</div>
+              <div style={{ display:"flex", gap:5, flexWrap:"wrap" as const }}>
+                {([
+                  { value:"equilibre",      label:"Équilibré",     color:"#a5b4fc" },
+                  { value:"professionnel",  label:"Professionnel", color:"#60a5fa" },
+                  { value:"decontracte",    label:"Décontracté",   color:"#34d399" },
+                  { value:"technique",      label:"Technique",     color:"#f472b6" },
+                ]).map(tone => (
+                  <button key={tone.value} className="no-drag"
+                    onClick={() => { setAgentTone(tone.value); saveProfile({ agent_tone: tone.value }); }}
+                    style={{ padding:"5px 12px", borderRadius:8, border: agentTone === tone.value ? `1px solid ${tone.color}60` : "1px solid rgba(255,255,255,0.08)", background: agentTone === tone.value ? `${tone.color}1a` : "rgba(255,255,255,0.04)", color: agentTone === tone.value ? tone.color : "rgba(255,255,255,0.4)", fontSize:11, cursor:"pointer", transition:"all 0.15s", fontFamily:"inherit", fontWeight: agentTone === tone.value ? 600 : 400 }}>
+                    {tone.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Thème */}
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:"rgba(165,180,252,0.45)", textTransform:"uppercase" as const, letterSpacing:"0.09em", marginBottom:8 }}>Thème</div>
+              <div style={{ display:"flex", gap:5 }}>
+                {(Object.entries(THEMES) as [ThemeKey, typeof THEMES[ThemeKey]][]).map(([key, t]) => (
+                  <button key={key} className="no-drag"
+                    onClick={() => { setTheme(key); localStorage.setItem("omnyx_theme", key); }}
+                    style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 10px", borderRadius:8, border: theme === key ? `1px solid ${t.border}` : "1px solid rgba(255,255,255,0.08)", background: theme === key ? `${t.shadowRing}` : "rgba(255,255,255,0.04)", color: theme === key ? t.accentLight : "rgba(255,255,255,0.4)", fontSize:11, cursor:"pointer", transition:"all 0.15s", fontFamily:"inherit", fontWeight: theme === key ? 700 : 400 }}>
+                    <span style={{ width:8, height:8, borderRadius:"50%", background: t.accent, flexShrink:0, display:"inline-block", boxShadow: theme === key ? `0 0 6px ${t.accent}` : "none" }}/>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Séparateur */}
+            <div style={{ height:1, background:"rgba(255,255,255,0.05)" }} />
+
+            {/* Raccourci clavier */}
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:"rgba(165,180,252,0.45)", textTransform:"uppercase" as const, letterSpacing:"0.09em", marginBottom:8 }}>Raccourci clavier</div>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <div
+                  onClick={() => { setCapturingShortcut(true); setPendingShortcut(""); }}
+                  style={{ flex:1, padding:"7px 10px", borderRadius:8, border: capturingShortcut ? "1px solid rgba(99,102,241,0.6)" : "1px solid rgba(255,255,255,0.1)", background: capturingShortcut ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.04)", cursor:"pointer", fontSize:12, color: capturingShortcut ? "#a5b4fc" : "rgba(255,255,255,0.7)", fontFamily:"'Courier New',monospace", textAlign:"center" as const, transition:"all 0.15s" }}>
+                  {capturingShortcut ? "Appuie sur ta combinaison…" : (pendingShortcut || currentShortcut)}
+                </div>
+                <button
+                  onClick={async () => {
+                    const s = pendingShortcut || currentShortcut;
+                    await saveProfile({ companion_shortcut: s });
+                    // @ts-ignore
+                    window.api?.updateShortcut(s);
+                    setCurrentShortcut(s);
+                    setPendingShortcut("");
+                  }}
+                  style={{ padding:"7px 14px", borderRadius:8, border:"1px solid rgba(99,102,241,0.4)", background:"rgba(99,102,241,0.2)", color:"#a5b4fc", fontSize:11, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" as const }}>
+                  {savingSettings ? "…" : "Enregistrer"}
+                </button>
+              </div>
+              <p style={{ fontSize:10, color:"rgba(255,255,255,0.18)", marginTop:5, marginBottom:0 }}>Clique sur la zone puis appuie sur ta combinaison. Ctrl+Shift+Espace fonctionne toujours.</p>
+            </div>
+
+          </div>
+        )}
+
+        {/* Chip fichier joint */}
+        {attachedFile && (
+          <div style={{ padding:"5px 16px", background:"rgba(99,102,241,0.08)", borderBottom:"1px solid rgba(99,102,241,0.2)", display:"flex", alignItems:"center", gap:8 }}>
+            <Paperclip size={11} color="#818cf8" />
+            <span style={{ fontSize:11, color:"#a5b4fc", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>{attachedFile.name}</span>
+            <button onClick={() => setAttachedFile(null)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.35)", fontSize:13, padding:0, lineHeight:1 }}>✕</button>
+          </div>
+        )}
 
         {/* Panneau suggestions fichiers */}
         {fileSuggestions.length > 0 && (
@@ -822,7 +1298,9 @@ export default function App() {
         {messages.length > 0 ? (
           <div style={styles.messages}>
             {messages.map((m, i) => (
-              <div key={i} style={{ marginBottom: 12, display:"flex", flexDirection:"column", alignItems: m.role==="user"?"flex-end":"flex-start" }}>
+              <div key={i} style={{ marginBottom: 12, display:"flex", flexDirection:"column", alignItems: m.role==="user"?"flex-end":"flex-start" }}
+                onMouseEnter={() => setHoveredMsgIdx(i)}
+                onMouseLeave={() => setHoveredMsgIdx(null)}>
                 {/* Header: name + time */}
                 <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4, flexDirection: m.role==="user"?"row-reverse":"row" }}>
                   {m.role==="assistant" && (
@@ -838,7 +1316,7 @@ export default function App() {
 
                 {/* Bubble */}
                 <div style={{ maxWidth:"88%", ...(m.role==="user" ? {
-                  background:"linear-gradient(135deg, #4f46e5, #7c3aed)",
+                  background: th.userMsg,
                   borderRadius:"16px 4px 16px 16px",
                   padding:"9px 13px",
                   color:"#ede9fe",
@@ -856,7 +1334,17 @@ export default function App() {
                   maxWidth:"100%",
                 })}}
                   className={m.role==="assistant" && loading && i===messages.length-1 ? "ao-cursor" : ""}>
-                  {m.role==="user" ? m.content : (
+                  {m.role==="user" ? (
+                    <>
+                      {m.content}
+                      {m.attachment && (
+                        <div style={{ marginTop:6, display:"flex", alignItems:"center", gap:5, opacity:0.75 }}>
+                          <Paperclip size={10} />
+                          <span style={{ fontSize:10 }}>{m.attachment}</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
                       h1: ({children}) => <p style={{ color:"#e0e0ff", fontWeight:700, fontSize:13, marginBottom:5, marginTop:8, borderBottom:"1px solid rgba(255,255,255,0.08)", paddingBottom:4 }}>{children}</p>,
                       h2: ({children}) => <p style={{ color:"#c8c8f0", fontWeight:700, fontSize:12, marginBottom:4, marginTop:7 }}>{children}</p>,
@@ -883,6 +1371,36 @@ export default function App() {
                     }}>{m.content}</ReactMarkdown>
                   )}
                 </div>
+
+                {/* Boutons copier + épingler */}
+                {m.role === "assistant" && (
+                  <div style={{ marginTop:6, display:"flex", gap:5 }}>
+                    <button
+                      title="Copier la réponse"
+                      onClick={async () => { await (window.api as any)?.writeClipboard(m.content); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 1500); }}
+                      style={{ display:"flex", alignItems:"center", gap:5, background: copiedIdx === i ? "rgba(52,211,153,0.15)" : "rgba(99,102,241,0.12)", border: copiedIdx === i ? "1px solid rgba(52,211,153,0.4)" : "1px solid rgba(99,102,241,0.25)", borderRadius:7, padding:"4px 10px", cursor:"pointer", transition:"all 0.15s", color: copiedIdx === i ? "#34d399" : "rgba(165,180,252,0.8)", fontSize:11, fontFamily:"inherit" }}>
+                      <span style={{ fontSize:12 }}>{copiedIdx === i ? "✓" : "⎘"}</span>
+                      <span>{copiedIdx === i ? "Copié !" : "Copier"}</span>
+                    </button>
+                    {(() => {
+                      const isPinned = pinnedMessages.some(p => p.content === m.content);
+                      return (
+                        <button
+                          title={isPinned ? "Désépingler" : "Épingler cette réponse"}
+                          onClick={() => {
+                            const next = isPinned
+                              ? pinnedMessages.filter(p => p.content !== m.content)
+                              : [...pinnedMessages, { content: m.content, ts: m.ts }];
+                            setPinnedMessages(next);
+                            try { localStorage.setItem("omnyx_pinned", JSON.stringify(next)); } catch {}
+                          }}
+                          style={{ display:"flex", alignItems:"center", gap:4, background: isPinned ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.05)", border: isPinned ? "1px solid rgba(245,158,11,0.4)" : "1px solid rgba(255,255,255,0.08)", borderRadius:7, padding:"4px 9px", cursor:"pointer", transition:"all 0.15s", color: isPinned ? "#fcd34d" : "rgba(255,255,255,0.3)", fontSize:11, fontFamily:"inherit" }}>
+                          <span style={{ fontSize:11 }}>📌</span>
+                        </button>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             ))}
             {loading && (
@@ -973,6 +1491,47 @@ export default function App() {
                 </button>
               ))}
 
+            </div>
+          </div>
+        )}
+
+        {/* Panneau messages épinglés */}
+        {showPinned && pinnedMessages.length > 0 && (
+          <div style={{ borderTop:"1px solid rgba(245,158,11,0.25)", background:"rgba(245,158,11,0.04)", maxHeight:220, display:"flex", flexDirection:"column" as const }}>
+            <div style={{ padding:"8px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", borderBottom:"1px solid rgba(245,158,11,0.1)", flexShrink:0 }}>
+              <span style={{ fontSize:10, fontWeight:700, color:"rgba(252,211,77,0.75)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>
+                📌 {pinnedMessages.length} épinglé{pinnedMessages.length > 1 ? "s" : ""}
+              </span>
+              <button className="no-drag" onClick={() => setShowPinned(false)}
+                style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:13, padding:"0 2px" }}>✕</button>
+            </div>
+            <div style={{ overflowY:"auto" as const, flex:1 }}>
+              {pinnedMessages.map((p, idx) => (
+                <div key={idx} style={{ padding:"8px 14px", borderBottom:"1px solid rgba(255,255,255,0.04)", display:"flex", gap:8, alignItems:"flex-start" }}>
+                  <div style={{ flex:1, overflow:"hidden" }}>
+                    {p.ts && <span style={{ fontSize:9, color:"rgba(255,255,255,0.2)", display:"block", marginBottom:2 }}>{p.ts}</span>}
+                    <p style={{ fontSize:11, color:"rgba(255,255,255,0.65)", margin:0, lineHeight:1.5, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" as any }}>{p.content}</p>
+                  </div>
+                  <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                    <button className="no-drag"
+                      onClick={async () => { await (window.api as any)?.writeClipboard(p.content); }}
+                      title="Copier"
+                      style={{ background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.25)", borderRadius:6, padding:"3px 8px", fontSize:11, color:"rgba(165,180,252,0.8)", cursor:"pointer" }}>
+                      ⎘
+                    </button>
+                    <button className="no-drag"
+                      onClick={() => {
+                        const next = pinnedMessages.filter((_, j) => j !== idx);
+                        setPinnedMessages(next);
+                        try { localStorage.setItem("omnyx_pinned", JSON.stringify(next)); } catch {}
+                      }}
+                      title="Désépingler"
+                      style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:13, padding:"3px 4px" }}>
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1148,6 +1707,146 @@ export default function App() {
           </div>
         )}
 
+        {/* Panneau texte détecté — actions contextuelles */}
+        {detectedText && (
+          <div style={{ padding:"10px 16px", borderTop:"1px solid rgba(16,185,129,0.2)", background:"rgba(16,185,129,0.05)" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <MousePointer2 size={11} color="#6ee7b7" />
+                <span style={{ fontSize:10, fontWeight:700, color:"rgba(110,231,183,0.8)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>Texte détecté</span>
+              </div>
+              <button className="no-drag" onClick={() => setDetectedText(null)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:12, padding:"0 2px" }}>✕</button>
+            </div>
+            <p style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginBottom:8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const, maxWidth:"100%" }}>
+              "{detectedText.slice(0, 80)}{detectedText.length > 80 ? "…" : ""}"
+            </p>
+            <div style={{ display:"flex", flexWrap:"wrap" as const, gap:5 }}>
+              {[
+                { label:"Traduire en anglais", prompt:`Traduis ce texte en anglais :\n\n"${detectedText}"` },
+                { label:"Expliquer", prompt:`Explique ce texte simplement :\n\n"${detectedText}"` },
+                { label:"Améliorer", prompt:`Améliore la qualité de ce texte (grammaire, style, clarté) :\n\n"${detectedText}"` },
+                { label:"Résumer", prompt:`Résume ce texte en 2-3 phrases :\n\n"${detectedText}"` },
+              ].map(action => (
+                <button key={action.label} className="no-drag"
+                  onClick={async () => {
+                    const text = detectedText;
+                    setDetectedText(null);
+                    setMessages(prev => [...prev, { role:"user" as const, content: action.label, ts: now() }]);
+                    setLoading(true);
+                    setMessages(prev => [...prev, { role:"assistant" as const, content:"", ts: now() }]);
+                    let full = "";
+                    try {
+                      for await (const ev of sendMessageStream(action.prompt, "executive", activeConversationId)) {
+                        if (ev.type === "start" && ev.conversation_id) setActiveConversationId(ev.conversation_id);
+                        else if (ev.type === "delta") { full += ev.content; setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:full}; return m; }); }
+                        else if (ev.type === "done" && ev.clean_content) { setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:ev.clean_content}; return m; }); }
+                      }
+                    } catch {} finally { setLoading(false); }
+                  }}
+                  style={{ background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.3)", borderRadius:7, color:"#6ee7b7", fontSize:11, cursor:"pointer", padding:"4px 10px" }}>
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Panneau Écris pour moi */}
+        {writeForMeMode && (
+          <div style={{ padding:"10px 16px", borderTop:"1px solid rgba(99,102,241,0.2)", background:"rgba(99,102,241,0.04)" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <PenLine size={11} color="#a5b4fc" />
+                <span style={{ fontSize:10, fontWeight:700, color:"rgba(165,180,252,0.8)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>Écris pour moi</span>
+              </div>
+              <button className="no-drag" onClick={() => { setWriteForMeMode(false); setWriteForMeResult(""); setWriteForMePrompt(""); setWriteForMeAttach(null); }} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:12 }}>✕</button>
+            </div>
+            {/* Sélecteur format */}
+            <div style={{ display:"flex", gap:4, marginBottom:6 }}>
+              {["email","message","post","rapport","autre"].map(f => (
+                <button key={f} className="no-drag" onClick={() => { setWriteFormat(f); if (f !== "email") setWriteForMeAttach(null); }}
+                  style={{ fontSize:10, padding:"3px 8px", borderRadius:6, border: writeFormat===f ? "1px solid rgba(99,102,241,0.6)" : "1px solid rgba(255,255,255,0.08)", background: writeFormat===f ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.04)", color: writeFormat===f ? "#a5b4fc" : "rgba(255,255,255,0.4)", cursor:"pointer", textTransform:"capitalize" as const }}>
+                  {f}
+                </button>
+              ))}
+            </div>
+            {/* Sélecteur ton */}
+            <div style={{ display:"flex", gap:4, marginBottom:8 }}>
+              {[{k:"professionnel",l:"Pro"},{k:"decontracte",l:"Décontracté"},{k:"creatif",l:"Créatif"},{k:"persuasif",l:"Persuasif"}].map(t => (
+                <button key={t.k} className="no-drag" onClick={() => setWriteTone(t.k)}
+                  style={{ fontSize:10, padding:"3px 8px", borderRadius:6, border: writeTone===t.k ? "1px solid rgba(139,92,246,0.6)" : "1px solid rgba(255,255,255,0.08)", background: writeTone===t.k ? "rgba(139,92,246,0.2)" : "rgba(255,255,255,0.04)", color: writeTone===t.k ? "#c4b5fd" : "rgba(255,255,255,0.4)", cursor:"pointer" }}>
+                  {t.l}
+                </button>
+              ))}
+            </div>
+            {/* Pièce jointe — visible uniquement pour email */}
+            {writeFormat === "email" && (
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+                <button className="no-drag"
+                  onClick={() => {
+                    // @ts-ignore
+                    window.api?.lockWindow();
+                    writeForMeFileRef.current?.click();
+                    const onFocus = () => setTimeout(() => { /* @ts-ignore */ window.api?.unlockWindow(); }, 300);
+                    window.addEventListener("focus", onFocus, { once: true });
+                  }}
+                  style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, padding:"3px 9px", borderRadius:6, border: writeForMeAttach ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.1)", background: writeForMeAttach ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)", color: writeForMeAttach ? "#a5b4fc" : "rgba(255,255,255,0.4)", cursor:"pointer", flexShrink:0 }}>
+                  <Paperclip size={10} />
+                  {writeForMeAttach ? writeForMeAttach.name : "Joindre un fichier"}
+                </button>
+                {writeForMeAttach && (
+                  <button className="no-drag" onClick={() => setWriteForMeAttach(null)}
+                    style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.3)", fontSize:12, padding:0, lineHeight:1 }}>✕</button>
+                )}
+                <input ref={writeForMeFileRef} type="file" style={{ display:"none" }}
+                  accept=".pdf,.txt,.md,.csv,.json,.docx,.doc,.html,.rtf"
+                  onChange={async (e) => {
+                    // @ts-ignore
+                    window.api?.unlockWindow();
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const data = await uploadFile(file);
+                      if (data.content) setWriteForMeAttach({ name: data.name, content: data.content });
+                    } catch {}
+                    finally { if (writeForMeFileRef.current) writeForMeFileRef.current.value = ""; }
+                  }}
+                />
+              </div>
+            )}
+            {/* Input description */}
+            <div style={{ display:"flex", gap:6, marginBottom: writeForMeResult ? 8 : 0 }}>
+              <input className="no-drag" value={writeForMePrompt} onChange={e => setWriteForMePrompt(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") generateWriteForMe(); }}
+                placeholder={`Décris ton ${writeFormat}…`}
+                style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:8, padding:"7px 10px", color:"white", fontSize:12, outline:"none", fontFamily:"inherit" }} />
+              <button className="no-drag" onClick={generateWriteForMe} disabled={writeForMeLoading || !writeForMePrompt.trim()}
+                style={{ background:"linear-gradient(135deg,#6366f1,#8b5cf6)", border:"none", borderRadius:8, color:"white", fontSize:11, cursor: writeForMeLoading ? "wait" : "pointer", padding:"0 14px", opacity: writeForMeLoading ? 0.7 : 1, flexShrink:0 }}>
+                {writeForMeLoading ? "…" : "Générer"}
+              </button>
+            </div>
+            {/* Résultat */}
+            {writeForMeResult && (
+              <div style={{ marginTop:8 }}>
+                <div style={{ background:"rgba(0,0,0,0.3)", border:"1px solid rgba(99,102,241,0.2)", borderRadius:8, padding:"8px 10px", maxHeight:120, overflowY:"auto" as const }}>
+                  <p style={{ fontSize:11, color:"#c4c4d8", lineHeight:1.6, whiteSpace:"pre-wrap" as const, margin:0 }}>{writeForMeResult}</p>
+                </div>
+                <div style={{ display:"flex", gap:6, marginTop:6 }}>
+                  <button className="no-drag" onClick={() => { navigator.clipboard.writeText(writeForMeResult); }}
+                    style={{ flex:1, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:7, color:"#a5b4fc", fontSize:11, cursor:"pointer", padding:"5px 0" }}>
+                    ⎘ Copier
+                  </button>
+                  <button className="no-drag" onClick={() => injectIntoApp(writeForMeResult)}
+                    title="Cache le compagnon et colle le texte dans l'app active"
+                    style={{ flex:1, background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.3)", borderRadius:7, color:"#6ee7b7", fontSize:11, cursor:"pointer", padding:"5px 0" }}>
+                    ↗ Injecter
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Panneau mémorisation rapide */}
         {quickMemoryMode && (
           <div style={{ padding: "10px 18px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column" as const, gap: 8, background: "rgba(245,158,11,0.04)" }}>
@@ -1307,14 +2006,169 @@ export default function App() {
           </div>
         )}
 
-        {/* Pied de page */}
-        <div style={styles.footer}>
-          <span style={styles.footerHint}>{tr("footer_hint")}</span>
-          <div style={{ display: "flex", gap: 8 }}>
+        </>}
+
+        {/* Panneau Timer */}
+        {timerOpen && (() => {
+          const R = 44;
+          const circ = 2 * Math.PI * R;
+          const progress = timerTotal > 0 ? timerSeconds / timerTotal : 1;
+          const offset = circ * (1 - progress);
+          const done = timerSeconds === 0;
+          const ringColor = done ? "#34d399" : "#f97316";
+          return (
+            <div style={{ padding:"14px 20px 14px", borderTop:"1px solid rgba(251,146,60,0.12)", background:"linear-gradient(180deg,rgba(249,115,22,0.06) 0%,rgba(0,0,0,0) 100%)", display:"flex", flexDirection:"column" as const, gap:10 }}>
+              {/* Header */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <span style={{ fontSize:10, fontWeight:700, color:"rgba(249,115,22,0.45)", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Timer</span>
+                <button className="no-drag" onClick={() => setTimerOpen(false)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.2)", fontSize:13, padding:0, lineHeight:1 }}>✕</button>
+              </div>
+
+              {/* Zone centrale : arc + temps + contrôles */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
+
+                {/* Arc SVG */}
+                <svg width="110" height="110" viewBox="0 0 110 110" style={{ transform:"rotate(-90deg)", flexShrink:0 }}>
+                  <circle cx="55" cy="55" r={R} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8"/>
+                  <circle cx="55" cy="55" r={R} fill="none"
+                    stroke={ringColor} strokeWidth="8" strokeLinecap="round"
+                    strokeDasharray={circ} strokeDashoffset={offset}
+                    style={{ transition: timerRunning ? "stroke-dashoffset 1s linear" : "stroke-dashoffset 0.3s ease", filter:`drop-shadow(0 0 7px ${ringColor}99)` }}
+                  />
+                </svg>
+
+                {/* Temps + contrôles à droite */}
+                <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:10 }}>
+                  {/* Affichage / édition du temps */}
+                  {done ? (
+                    <div style={{ fontSize:30, color:"#34d399", lineHeight:1 }}>✓</div>
+                  ) : timerRunning ? (
+                    <div style={{ textAlign:"center" as const }}>
+                      <div style={{ fontSize:30, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", letterSpacing:"0.04em", lineHeight:1 }}>{timerFmt(timerSeconds)}</div>
+                      <div style={{ fontSize:9, color:"rgba(255,255,255,0.25)", marginTop:4 }}>{timerLabel}</div>
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:4 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <button className="no-drag"
+                          onClick={() => { const s=Math.max(60,timerSeconds-60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
+                          style={{ width:30, height:30, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.25)", color:"#fb923c", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1, userSelect:"none" as const }}>
+                          −
+                        </button>
+                        <div style={{ textAlign:"center" as const, minWidth:72 }}>
+                          <div style={{ fontSize:28, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", letterSpacing:"0.04em", lineHeight:1 }}>{timerFmt(timerSeconds)}</div>
+                        </div>
+                        <button className="no-drag"
+                          onClick={() => { const s=Math.min(5999,timerSeconds+60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
+                          style={{ width:30, height:30, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.25)", color:"#fb923c", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1, userSelect:"none" as const }}>
+                          +
+                        </button>
+                      </div>
+                      <span style={{ fontSize:9, color:"rgba(255,255,255,0.2)", letterSpacing:"0.08em" }}>− / + 1 minute</span>
+                    </div>
+                  )}
+
+                  {/* Boutons Start / Reset */}
+                  <div style={{ display:"flex", flexDirection:"row" as const, alignItems:"center", gap:8 }}>
+                    <button className="no-drag"
+                      onClick={() => { setTimerRunning(false); setTimerSeconds(timerTotal > 0 ? timerTotal : 25*60); }}
+                      style={{ width:32, height:32, borderRadius:"50%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      ↺
+                    </button>
+                    <button className="no-drag"
+                      onClick={() => {
+                        if (done) {
+                          setTimerSeconds(timerTotal);
+                          setTimeout(() => setTimerRunning(true), 0);
+                        } else {
+                          if (!timerRunning) setTimerTotal(timerSeconds);
+                          setTimerRunning(v => !v);
+                        }
+                      }}
+                      style={{ width:46, height:46, borderRadius:"50%", background:"linear-gradient(135deg,#f97316,#fb923c)", border:"none", boxShadow:"0 0 18px rgba(249,115,22,0.4)", cursor:"pointer", color:"white", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      {timerRunning ? "⏸" : "▶"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Presets */}
+              <div style={{ display:"flex", gap:4, justifyContent:"center", flexWrap:"wrap" as const }}>
+                {([
+                  { label:"5min", s:5*60 }, { label:"15min", s:15*60 }, { label:"25min", s:25*60 },
+                  { label:"30min", s:30*60 }, { label:"1h", s:60*60 },
+                ]).map(p => {
+                  const active = timerSeconds === p.s && !timerRunning;
+                  return (
+                    <button key={p.label} className="no-drag"
+                      onClick={() => { setTimerRunning(false); setTimerSeconds(p.s); setTimerTotal(p.s); setTimerLabel(p.label); }}
+                      style={{ fontSize:10, padding:"3px 10px", borderRadius:20, border: active ? "1px solid rgba(249,115,22,0.55)" : "1px solid rgba(255,255,255,0.07)", background: active ? "rgba(249,115,22,0.15)" : "rgba(255,255,255,0.03)", color: active ? "#fb923c" : "rgba(255,255,255,0.35)", cursor:"pointer", transition:"all 0.15s", fontWeight: active ? 600 : 400 }}>
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Pied de page — masqué en compact */}
+        {!compactMode && <div style={styles.footer}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={styles.footerHint}>{tr("footer_hint")}</span>
+            {timerRunning && (
+              <button className="no-drag" onClick={() => setTimerOpen(v => !v)}
+                style={{ display:"flex", alignItems:"center", gap:4, background:"rgba(251,146,60,0.12)", border:"1px solid rgba(251,146,60,0.3)", borderRadius:6, padding:"2px 8px", cursor:"pointer", animation:"pulse 2s ease-in-out infinite" }}>
+                <span style={{ fontSize:10 }}>⏱</span>
+                <span style={{ fontSize:10, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace" }}>{timerFmt(timerSeconds)}</span>
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {/* Épinglés */}
+            {pinnedMessages.length > 0 && (
+              <button title=""
+                onMouseEnter={e => showTip(e, `${pinnedMessages.length} message${pinnedMessages.length > 1 ? "s" : ""} épinglé${pinnedMessages.length > 1 ? "s" : ""}`)} onMouseLeave={hideTip}
+                onClick={() => setShowPinned(v => !v)}
+                style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4, height:28, borderRadius:8, cursor:"pointer", border: showPinned ? "1px solid rgba(245,158,11,0.5)" : "1px solid rgba(245,158,11,0.2)", background: showPinned ? "rgba(245,158,11,0.18)" : "rgba(245,158,11,0.06)", transition:"all 0.15s", flexShrink:0, padding:"0 8px" }}>
+                <span style={{ fontSize:11 }}>📌</span>
+                <span style={{ fontSize:10, fontWeight:700, color: showPinned ? "#fcd34d" : "rgba(252,211,77,0.5)" }}>{pinnedMessages.length}</span>
+              </button>
+            )}
+            {/* Exporter */}
+            {messages.length > 0 && (
+              <button title=""
+                onMouseEnter={e => showTip(e, "Exporter la conversation")} onMouseLeave={hideTip}
+                onClick={exportConversation}
+                style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
+                <span style={{ fontSize:13 }}>📤</span>
+              </button>
+            )}
+            {/* Timer */}
+            <button title=""
+              onMouseEnter={e => showTip(e, "Timer / Pomodoro")} onMouseLeave={hideTip}
+              onClick={() => setTimerOpen(v => !v)}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? "1px solid rgba(251,146,60,0.45)" : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? "rgba(251,146,60,0.15)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
+              <span style={{ fontSize:13, lineHeight:1 }}>⏱</span>
+            </button>
+            {/* Mode compact */}
+            <button title=""
+              onMouseEnter={e => showTip(e, compactMode ? "Agrandir" : "Mode compact")} onMouseLeave={hideTip}
+              onClick={toggleCompact}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"1px solid rgba(255,255,255,0.08)", background: compactMode ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
+              {compactMode ? <Maximize2 size={13} color="#a5b4fc" /> : <Minimize2 size={13} color="#94a3b8" />}
+            </button>
+            {/* Settings — Paramètres */}
+            <button title=""
+              onMouseEnter={e => showTip(e, "Paramètres")} onMouseLeave={hideTip}
+              onClick={() => { setShortcutOpen(v => !v); setPendingShortcut(""); setCapturingShortcut(false); }}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: shortcutOpen ? "1px solid rgba(99,102,241,0.4)" : "1px solid rgba(255,255,255,0.08)", background: shortcutOpen ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
+              <Settings size={13} color={shortcutOpen ? "#a5b4fc" : "#94a3b8"} />
+            </button>
             {messages.length > 0 && (
               <button
                 title="Nouveau chat"
-                onClick={() => { setMessages([]); lastPageRef.current = null; setActiveConversationId(null); }}
+                onClick={() => { setMessages([]); lastPageRef.current = null; setActiveConversationId(null); localStorage.removeItem("omnyx_companion_conv_id"); }}
                 style={{ display:"flex", alignItems:"center", justifyContent:"center", width:32, height:32, borderRadius:9, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer", transition:"all 0.15s", flexShrink:0 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(99,102,241,0.2)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(99,102,241,0.4)"; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.1)"; }}>
@@ -1338,7 +2192,7 @@ export default function App() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

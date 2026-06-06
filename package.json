@@ -62,10 +62,12 @@
         }
       ],
       "icon": "build-assets/icon.png",
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "Omnyx-Setup.exe"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Omnyx"
@@ -81,7 +83,8 @@
         }
       ],
       "icon": "build-assets/icon.png",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "artifactName": "Omnyx-${arch}.dmg"
     },
     "linux": {
       "target": "AppImage",

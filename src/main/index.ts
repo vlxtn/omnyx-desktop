@@ -1,14 +1,135 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, ipcMain, shell, clipboard, Notification } from "electron";
+import { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, ipcMain, shell, clipboard, Notification, session } from "electron";
 import { autoUpdater } from "electron-updater";
 import { join } from "path";
+import * as fs from "fs";
+import * as childProcess from "child_process";
+import * as os from "os";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { registerSystemHandlers, getActiveBrowserUrl } from "./system";
+
+const API_BASE = "https://omnyx-backend-production.up.railway.app";
 
 let commandWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isVisible = false;
-let firstShow = true;
 let lastKnownClipboard = "";
+let selectionWatcher: childProcess.ChildProcess | null = null;
+
+const SELECTION_HOOK_CS = `
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Windows.Forms;
+using System.Text;
+
+public class OmnyxSelectionHook {
+    [DllImport("user32.dll")] static extern IntPtr SetWindowsHookEx(int id, LowLevelMouseProc fn, IntPtr mod, uint tid);
+    [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr h, int n, IntPtr w, IntPtr l);
+    [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string n);
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte sc, uint fl, UIntPtr ex);
+
+    public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+    const int WH_MOUSE_LL = 14;
+    const int WM_LBUTTONUP = 514;
+    const byte VK_CONTROL = 0x11;
+    const byte VK_C = 0x43;
+
+    static IntPtr hookId = IntPtr.Zero;
+    static LowLevelMouseProc proc;
+    static string lastReported = "";
+
+    static IntPtr Callback(int code, IntPtr w, IntPtr l) {
+        if (code >= 0 && (int)w == WM_LBUTTONUP) {
+            Thread t = new Thread(() => {
+                Thread.Sleep(120);
+                string prev = "";
+                try { if (Clipboard.ContainsText()) prev = Clipboard.GetText() ?? ""; } catch {}
+                keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_C, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_C, 0, 2, UIntPtr.Zero);
+                keybd_event(VK_CONTROL, 0, 2, UIntPtr.Zero);
+                Thread.Sleep(160);
+                string cur = "";
+                try { if (Clipboard.ContainsText()) cur = Clipboard.GetText() ?? ""; } catch {}
+                if (cur != prev && cur.Length >= 10 && cur.Length <= 3000 && cur != lastReported) {
+                    lastReported = cur;
+                    Console.WriteLine(Convert.ToBase64String(Encoding.UTF8.GetBytes(cur)));
+                    Console.Out.Flush();
+                }
+            });
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+        }
+        return CallNextHookEx(hookId, code, w, l);
+    }
+
+    public static void Start() {
+        proc = Callback;
+        hookId = SetWindowsHookEx(WH_MOUSE_LL, proc, GetModuleHandle(null), 0);
+        Application.Run();
+    }
+}
+`;
+
+function startSelectionWatcher(): void {
+  if (selectionWatcher) return;
+  const psFile = join(os.tmpdir(), "omnyx_sel_hook.ps1");
+  const script = `Add-Type -TypeDefinition @'\n${SELECTION_HOOK_CS}\n'@ -ReferencedAssemblies System.Windows.Forms\n[OmnyxSelectionHook]::Start()`;
+  fs.writeFileSync(psFile, script, "utf8");
+  selectionWatcher = childProcess.spawn("powershell.exe", ["-ExecutionPolicy", "Bypass", "-NonInteractive", "-File", psFile], { windowsHide: true });
+  selectionWatcher.stdout?.on("data", (data: Buffer) => {
+    for (const line of data.toString().split("\n")) {
+      const b64 = line.trim();
+      if (!b64) continue;
+      try {
+        const text = Buffer.from(b64, "base64").toString("utf8");
+        if (text.length >= 10) {
+          if (isVisible) {
+            commandWindow?.webContents.send("text-selected", text);
+          } else {
+            showWindow();
+            setTimeout(() => commandWindow?.webContents.send("text-selected", text), 350);
+          }
+        }
+      } catch {}
+    }
+  });
+  selectionWatcher.on("exit", () => { selectionWatcher = null; });
+}
+
+function stopSelectionWatcher(): void {
+  if (selectionWatcher) { selectionWatcher.kill(); selectionWatcher = null; }
+}
+
+function boundsFile(): string { return join(app.getPath("userData"), "companion-bounds.json"); }
+function loadSavedBounds(): { x: number; y: number; width: number; height: number } | null {
+  try { return JSON.parse(fs.readFileSync(boundsFile(), "utf8")); } catch { return null; }
+}
+function saveBounds(): void {
+  if (!commandWindow) return;
+  try { fs.writeFileSync(boundsFile(), JSON.stringify(commandWindow.getBounds()), "utf8"); } catch {}
+}
+async function captureScreenBase64(): Promise<string> {
+  const tmpPng = join(os.tmpdir(), `omnyx_cap_${Date.now()}.png`);
+  const psFile = join(os.tmpdir(), "omnyx_cap.ps1");
+  const escaped = tmpPng.replace(/\\/g, "\\\\");
+  fs.writeFileSync(psFile, `Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+$s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$b=New-Object System.Drawing.Bitmap($s.Width,$s.Height)
+$g=[System.Drawing.Graphics]::FromImage($b)
+$g.CopyFromScreen($s.Location,[System.Drawing.Point]::Empty,$s.Size)
+$g.Dispose()
+$b.Save('${escaped}',[System.Drawing.Imaging.ImageFormat]::Png)
+$b.Dispose()`, "utf8");
+  await new Promise<void>((resolve, reject) =>
+    childProcess.spawn("powershell.exe", ["-ExecutionPolicy", "Bypass", "-NonInteractive", "-File", psFile], { windowsHide: true })
+      .on("close", code => code === 0 ? resolve() : reject(new Error(`ps exit ${code}`)))
+  );
+  const base64 = fs.readFileSync(tmpPng).toString("base64");
+  try { fs.unlinkSync(tmpPng); } catch {}
+  return base64;
+}
 const ALL_SHORTCUTS = [
   "Control+Shift+Space",
   "Control+Shift+A",
@@ -46,9 +167,11 @@ function applyShortcut(shortcuts: string[]): void {
 
 
 function createCommandWindow(): void {
+  const saved = loadSavedBounds();
   commandWindow = new BrowserWindow({
-    width: 680,
-    height: 520,
+    width: saved?.width ?? 680,
+    height: saved?.height ?? 520,
+    ...(saved ? { x: saved.x, y: saved.y } : { center: true }),
     show: false,
     frame: false,
     transparent: true,
@@ -56,7 +179,6 @@ function createCommandWindow(): void {
     movable: true,
     alwaysOnTop: true,
     skipTaskbar: true,
-    center: true,
     vibrancy: "under-window",
     visualEffectState: "active",
     webPreferences: {
@@ -67,9 +189,13 @@ function createCommandWindow(): void {
     },
   });
 
-  if (!is.dev) {
-    commandWindow.on("blur", () => { hideWindow(); });
-  }
+  let moveTimer: ReturnType<typeof setTimeout> | null = null;
+  const debouncedSave = () => {
+    if (moveTimer) clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => saveBounds(), 150);
+  };
+  commandWindow.on("move", debouncedSave);
+  commandWindow.on("resize", debouncedSave);
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     commandWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
@@ -80,7 +206,6 @@ function createCommandWindow(): void {
 
 function showWindow(): void {
   if (!commandWindow) return;
-  if (firstShow) { commandWindow.center(); firstShow = false; }
   commandWindow.show();
   commandWindow.focus();
   isVisible = true;
@@ -150,13 +275,72 @@ function createTray(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId("com.agentos");
 
+  // Autoriser l'accès au microphone pour la reconnaissance vocale
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === "media");
+  });
+
   lastKnownClipboard = clipboard.readText().trim();
 
-  // Surveiller le clipboard
+  let lastClipboardImageKey = "";
+  let lastTextForSelection = "";
+  let autoDetectTextEnabled = false;
+
+  // Surveiller le clipboard (texte + images)
   setInterval(() => {
     const current = clipboard.readText().trim();
+
+    // Détection texte sélectionné
+    const isMeaningful = current.length >= 10 && current.length <= 3000
+      && !/^https?:\/\//.test(current)
+      && current !== lastTextForSelection;
+
+    if (isMeaningful) {
+      lastTextForSelection = current;
+      if (isVisible) {
+        commandWindow?.webContents.send("text-selected", current);
+      } else if (autoDetectTextEnabled) {
+        showWindow();
+        setTimeout(() => commandWindow?.webContents.send("text-selected", current), 350);
+      }
+    }
     lastKnownClipboard = current;
-  }, 500);
+
+    const img = clipboard.readImage();
+    if (!img.isEmpty()) {
+      const size = img.getSize();
+      const key = `${size.width}x${size.height}`;
+      if (key !== lastClipboardImageKey) {
+        lastClipboardImageKey = key;
+        const base64 = img.toPNG().toString("base64");
+        commandWindow?.webContents.send("clipboard-image", base64);
+      }
+    } else {
+      lastClipboardImageKey = "";
+    }
+  }, 800);
+
+  ipcMain.on("set-auto-detect-text", (_, enabled: boolean) => {
+    autoDetectTextEnabled = enabled;
+    if (enabled) startSelectionWatcher();
+    else stopSelectionWatcher();
+  });
+
+  ipcMain.handle("paste-to-active-app", async (_, text: string) => {
+    clipboard.writeText(text);
+    commandWindow?.hide();
+    isVisible = false;
+    await new Promise(r => setTimeout(r, 350));
+    try {
+      childProcess.execSync(
+        `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"`,
+        { windowsHide: true }
+      );
+    } catch {}
+    commandWindow?.show();
+    commandWindow?.focus();
+    isVisible = true;
+  });
 
   // Vérification des tâches toutes les 60 secondes
   const notifiedTasks = new Set<string>();
@@ -168,7 +352,7 @@ app.whenReady().then(() => {
         ? await commandWindow.webContents.executeJavaScript(`localStorage.getItem('omnyx_token')`)
         : null;
       if (!token) return;
-      const res = await fetch("http://localhost:8000/api/tasks/", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/api/tasks/`, { headers: { Authorization: `Bearer ${token}` } });
       const tasks = (await res.json()) as {
         id: string; title: string; priority: string; status: string;
         metadata?: { remind_at?: number; repeat_interval?: number };
@@ -212,10 +396,45 @@ app.whenReady().then(() => {
 
   ipcMain.handle("get-active-url", async () => JSON.stringify(await getActiveBrowserUrl()));
   ipcMain.handle("get-clipboard", () => clipboard.readText());
+  ipcMain.handle("write-clipboard", (_, text: string) => { clipboard.writeText(text); });
   ipcMain.on("hide-window", hideWindow);
   ipcMain.on("show-window", showWindow);
+
+  let customShortcut: string | null = null;
+  ipcMain.on("update-shortcut", (_, shortcut: string) => {
+    // Ctrl+Shift+Space est TOUJOURS gardé + les autres défauts + le raccourci custom
+    const toRegister = ALL_SHORTCUTS.includes(shortcut)
+      ? ALL_SHORTCUTS
+      : [...ALL_SHORTCUTS, shortcut];
+    // Retirer l'ancien raccourci custom s'il existe et n'est pas dans les défauts
+    const previous = customShortcut;
+    customShortcut = shortcut;
+    if (previous && !ALL_SHORTCUTS.includes(previous)) {
+      const filtered = toRegister.filter(s => s !== previous);
+      applyShortcut(filtered);
+    } else {
+      applyShortcut(toRegister);
+    }
+  });
   ipcMain.on("resize-window", (_, { width, height }: { width: number; height: number }) => {
     if (commandWindow) { commandWindow.setSize(width, height); }
+  });
+  ipcMain.on("set-resizable", (_, resizable: boolean) => {
+    if (commandWindow) { commandWindow.setResizable(resizable); }
+  });
+  ipcMain.handle("capture-screen", async () => {
+    if (!commandWindow) return { success: false };
+    commandWindow.hide();
+    await new Promise(r => setTimeout(r, 400));
+    try {
+      const base64 = await captureScreenBase64();
+      commandWindow.show();
+      commandWindow.focus();
+      return { success: true, base64, mime_type: "image/png" };
+    } catch (e) {
+      commandWindow.show();
+      return { success: false, error: String(e) };
+    }
   });
   // Déduplication des notifications — même titre+body = affiché une seule fois par session
   const shownNotifications = new Map<string, number>(); // key → timestamp

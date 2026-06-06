@@ -23,6 +23,14 @@ export async function analyzeContent(content: string, question?: string, url?: s
   return data;
 }
 
+export async function analyzeImage(base64: string, mime_type: string, question: string, conversationId?: string | null) {
+  const { data } = await api.post("/api/chat/analyze-image", {
+    base64, mime_type, question,
+    ...(conversationId ? { conversation_id: conversationId } : {}),
+  }, { timeout: 120000 });
+  return data as { result: string };
+}
+
 export async function sendMessage(message: string, agentType = "executive") {
   const { data } = await api.post("/api/chat/message", {
     message,
@@ -31,7 +39,19 @@ export async function sendMessage(message: string, agentType = "executive") {
   return data;
 }
 
-export async function* sendMessageStream(message: string, agentType = "executive", conversationId?: string | null) {
+export async function uploadFile(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post("/api/chat/file", form, { headers: { "Content-Type": undefined } });
+  return data as { type: "image" | "text"; name: string; content?: string; base64?: string; mime_type?: string };
+}
+
+export async function* sendMessageStream(
+  message: string,
+  agentType = "executive",
+  conversationId?: string | null,
+  imageData?: { base64: string; mime_type: string }
+) {
   const token = localStorage.getItem("omnyx_token");
   const response = await fetch(`${BASE_URL}/api/chat/message/stream`, {
     method: "POST",
@@ -39,7 +59,12 @@ export async function* sendMessageStream(message: string, agentType = "executive
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ message, agent_type: agentType, ...(conversationId ? { conversation_id: conversationId } : {}) }),
+    body: JSON.stringify({
+      message,
+      agent_type: agentType,
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+      ...(imageData ? { image_data: { base64: imageData.base64, mime_type: imageData.mime_type } } : {}),
+    }),
   });
   if (!response.body) return;
   const reader = response.body.getReader();
