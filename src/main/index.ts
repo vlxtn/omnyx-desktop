@@ -150,7 +150,7 @@ function openWithCapture(): void {
   showWindow();
 }
 
-function applyShortcut(shortcuts: string[]): void {
+function applyShortcut(shortcuts: string[], notifyOnStart = false): void {
   globalShortcut.unregisterAll();
   const registered: string[] = [];
   const failed: string[] = [];
@@ -160,9 +160,15 @@ function applyShortcut(shortcuts: string[]): void {
       if (ok) registered.push(s); else failed.push(s + " (déjà pris)");
     } catch (e) { failed.push(s + " (erreur)"); }
   });
-  currentShortcuts = shortcuts;
+  currentShortcuts = registered;
   console.log("[Omnyx] ✅ Raccourcis actifs:", registered.join(", "));
   if (failed.length) console.log("[Omnyx] ❌ Échoués:", failed.join(", "));
+  if (notifyOnStart) {
+    const body = registered.length > 0
+      ? `Raccourci actif : ${registered[0]}`
+      : "Aucun raccourci disponible — tous sont pris par d'autres apps.";
+    new Notification({ title: "Omnyx est prêt", body, silent: true }).show();
+  }
 }
 
 
@@ -224,8 +230,10 @@ function hideWindow(): void {
 }
 
 function buildTrayMenu(): Electron.Menu {
+  const shortcutHint = currentShortcuts.length > 0 ? currentShortcuts[0] : "Ctrl+Shift+Space";
   return Menu.buildFromTemplate([
-    { label: "Ouvrir Omnyx",          click: showWindow, accelerator: "Ctrl+Shift+Space" },
+    { label: `Ouvrir Omnyx  (${shortcutHint})`, click: showWindow },
+    { label: "Ouvrir le tableau de bord", click: () => shell.openExternal("https://useomnyx.com") },
     { type: "separator" },
     {
       label: "Analyser la page courante", click: async () => {
@@ -390,7 +398,7 @@ app.whenReady().then(() => {
   registerSystemHandlers(ipcMain, shell);
 
   // Raccourcis par défaut
-  applyShortcut(currentShortcuts);
+  applyShortcut(currentShortcuts, !is.dev);
 
   if (is.dev) { showWindow(); }
 
