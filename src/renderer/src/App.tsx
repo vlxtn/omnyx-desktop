@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2 } from "lucide-react";
+import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
 import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
@@ -927,6 +927,12 @@ export default function App() {
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor: fileLoading ? "not-allowed" : "pointer", border: attachedFile ? "1px solid rgba(99,102,241,0.4)" : "1px solid rgba(255,255,255,0.07)", background: attachedFile ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", opacity: fileLoading ? 0.5 : 1, flexShrink:0 }}>
               <Paperclip size={13} color={attachedFile ? "#a5b4fc" : "#c4b5fd"} />
             </button>}
+            <button className="no-drag ao-send-btn"
+              onClick={send}
+              disabled={loading || !input.trim()}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor: (loading || !input.trim()) ? "not-allowed" : "pointer", border:"none", background: (input.trim() && !loading) ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.06)", opacity: (input.trim() && !loading) ? 1 : 0.35, flexShrink:0, transition:"all 0.2s" }}>
+              <CornerDownLeft size={13} color="white" />
+            </button>
             <input ref={fileInputRef} type="file" style={{ display:"none" }}
               accept="image/*,.pdf,.txt,.md,.csv,.json,.ts,.tsx,.js,.jsx,.py,.html,.css,.xml,.docx"
               onChange={async (e) => {
@@ -970,38 +976,38 @@ export default function App() {
           {/* ── Toolbar groupée — masquée en compact ── */}
           {!compactMode && <div style={{ display:"flex", alignItems:"center", gap:2, padding:"3px", borderRadius:10, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", flexShrink:0, ...(isVertical ? { order:11 } : {}) }}>
             {/* Brain — Executive */}
-            <button className="no-drag ao-btn" title=""
+            <button className="no-drag ao-icon-btn" title=""
               onClick={() => { setBriefing(""); setExecutiveMode(v => !v); }}
               onMouseEnter={e => showTip(e, "Mode Executive")} onMouseLeave={hideTip}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: executiveMode ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <Brain size={13} color={executiveMode ? "#a5b4fc" : "#818cf8"} />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: executiveMode ? "rgba(99,102,241,0.3)" : "transparent" }}>
+              <Brain size={14} color={executiveMode ? "#a5b4fc" : "#818cf8"} />
             </button>
             {/* Clock — Historique */}
-            <button className="no-drag ao-btn" title=""
+            <button className="no-drag ao-icon-btn" title=""
               onClick={() => {
                 if (!historyOpen) fetchStale<Conversation[]>("/api/chat/conversations", setConversations);
                 setHistoryOpen(v => !v);
               }}
               onMouseEnter={e => showTip(e, "Historique des conversations")} onMouseLeave={hideTip}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: historyOpen ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <Clock size={13} color={historyOpen ? "#a5b4fc" : "#60a5fa"} />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: historyOpen ? "rgba(96,165,250,0.25)" : "transparent" }}>
+              <Clock size={14} color={historyOpen ? "#93c5fd" : "#60a5fa"} />
             </button>
             {/* FileText — Coller */}
-            <button className="no-drag" title=""
+            <button className="no-drag ao-icon-btn" title=""
               onClick={() => setPasteMode(v => !v)}
               onMouseEnter={e => showTip(e, "Coller & analyser du texte")} onMouseLeave={hideTip}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: pasteMode ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <FileText size={13} color={pasteMode ? "#a5b4fc" : "#22d3ee"} />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: pasteMode ? "rgba(34,211,238,0.2)" : "transparent" }}>
+              <FileText size={14} color={pasteMode ? "#67e8f9" : "#22d3ee"} />
             </button>
-            {/* BookMarked — Mémoriser */}
-            <button className="no-drag" title=""
+            {/* Sparkles — Mémoriser */}
+            <button className="no-drag ao-icon-btn" title=""
               onClick={() => { setQuickMemoryMode(v => !v); setPasteMode(false); }}
               onMouseEnter={e => showTip(e, "Mémoriser quelque chose")} onMouseLeave={hideTip}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: quickMemoryMode ? "rgba(245,158,11,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <Sparkles size={13} color={quickMemoryMode ? "#fcd34d" : "#fbbf24"} />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: quickMemoryMode ? "rgba(245,158,11,0.25)" : "transparent" }}>
+              <Sparkles size={14} color={quickMemoryMode ? "#fde68a" : "#fbbf24"} />
             </button>
             {/* Camera — Capture d'écran */}
-            <button className="no-drag" title=""
+            <button className="no-drag ao-icon-btn" title=""
               onMouseEnter={e => showTip(e, "Capturer & analyser l'écran avec l'IA")} onMouseLeave={hideTip}
               disabled={loading || fileLoading}
               onClick={async () => {
@@ -1019,11 +1025,11 @@ export default function App() {
                   }
                 } catch { /* silent */ } finally { setFileLoading(false); }
               }}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor: (loading || fileLoading) ? "not-allowed" : "pointer", border:"none", background:"transparent", transition:"background 0.15s", opacity: (loading || fileLoading) ? 0.4 : 1 }}>
-              <Camera size={13} color="#f472b6" />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor: (loading || fileLoading) ? "not-allowed" : "pointer", border:"none", background:"transparent", opacity: (loading || fileLoading) ? 0.4 : 1 }}>
+              <Camera size={14} color="#f472b6" />
             </button>
             {/* MousePointer2 — Détection texte sélectionné */}
-            <button className="no-drag" title=""
+            <button className="no-drag ao-icon-btn" title=""
               onMouseEnter={e => showTip(e, autoDetectMode ? "Désactiver la détection de texte" : "Détecter le texte sélectionné")} onMouseLeave={hideTip}
               onClick={() => {
                 const next = !autoDetectMode;
@@ -1032,15 +1038,15 @@ export default function App() {
                 window.api?.setAutoDetectText(next);
                 if (!next) setDetectedText(null);
               }}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: autoDetectMode ? "rgba(16,185,129,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <MousePointer2 size={13} color={autoDetectMode ? "#6ee7b7" : "#34d399"} />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: autoDetectMode ? "rgba(16,185,129,0.25)" : "transparent" }}>
+              <MousePointer2 size={14} color={autoDetectMode ? "#6ee7b7" : "#34d399"} />
             </button>
             {/* PenLine — Écris pour moi */}
-            <button className="no-drag" title=""
+            <button className="no-drag ao-icon-btn" title=""
               onMouseEnter={e => showTip(e, "Écris pour moi")} onMouseLeave={hideTip}
               onClick={() => { setWriteForMeMode(v => !v); setDetectedText(null); setPasteMode(false); setQuickMemoryMode(false); }}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:26, height:26, borderRadius:7, cursor:"pointer", border:"none", background: writeForMeMode ? "rgba(99,102,241,0.25)" : "transparent", transition:"background 0.15s" }}>
-              <PenLine size={13} color={writeForMeMode ? "#a5b4fc" : "#fb923c"} />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: writeForMeMode ? "rgba(251,146,60,0.2)" : "transparent" }}>
+              <PenLine size={14} color={writeForMeMode ? "#fdba74" : "#fb923c"} />
             </button>
             {/* Séparateur */}
             <div style={{ width:1, height:14, background:"rgba(255,255,255,0.08)", margin:"0 2px" }}/>
@@ -2130,43 +2136,43 @@ export default function App() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {/* Épinglés */}
             {pinnedMessages.length > 0 && (
-              <button title=""
+              <button title="" className="no-drag ao-icon-btn"
                 onMouseEnter={e => showTip(e, `${pinnedMessages.length} message${pinnedMessages.length > 1 ? "s" : ""} épinglé${pinnedMessages.length > 1 ? "s" : ""}`)} onMouseLeave={hideTip}
                 onClick={() => setShowPinned(v => !v)}
-                style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4, height:28, borderRadius:8, cursor:"pointer", border: showPinned ? "1px solid rgba(245,158,11,0.5)" : "1px solid rgba(245,158,11,0.2)", background: showPinned ? "rgba(245,158,11,0.18)" : "rgba(245,158,11,0.06)", transition:"all 0.15s", flexShrink:0, padding:"0 8px" }}>
+                style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4, height:28, borderRadius:8, cursor:"pointer", border: showPinned ? "1px solid rgba(245,158,11,0.5)" : "1px solid rgba(245,158,11,0.2)", background: showPinned ? "rgba(245,158,11,0.18)" : "rgba(245,158,11,0.06)", flexShrink:0, padding:"0 8px" }}>
                 <span style={{ fontSize:11 }}>📌</span>
                 <span style={{ fontSize:10, fontWeight:700, color: showPinned ? "#fcd34d" : "rgba(252,211,77,0.5)" }}>{pinnedMessages.length}</span>
               </button>
             )}
             {/* Exporter */}
             {messages.length > 0 && (
-              <button title=""
+              <button title="" className="no-drag ao-icon-btn"
                 onMouseEnter={e => showTip(e, "Exporter la conversation")} onMouseLeave={hideTip}
                 onClick={exportConversation}
-                style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
+                style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.04)", flexShrink:0 }}>
                 <span style={{ fontSize:13 }}>📤</span>
               </button>
             )}
             {/* Timer */}
-            <button title=""
+            <button title="" className="no-drag ao-icon-btn"
               onMouseEnter={e => showTip(e, "Timer / Pomodoro")} onMouseLeave={hideTip}
               onClick={() => setTimerOpen(v => !v)}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? "1px solid rgba(251,146,60,0.45)" : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? "rgba(251,146,60,0.15)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? "1px solid rgba(251,146,60,0.45)" : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? "rgba(251,146,60,0.15)" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
               <span style={{ fontSize:13, lineHeight:1 }}>⏱</span>
             </button>
             {/* Mode compact */}
-            <button title=""
+            <button title="" className="no-drag ao-icon-btn"
               onMouseEnter={e => showTip(e, compactMode ? "Agrandir" : "Mode compact")} onMouseLeave={hideTip}
               onClick={toggleCompact}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"1px solid rgba(255,255,255,0.08)", background: compactMode ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
-              {compactMode ? <Maximize2 size={13} color="#a5b4fc" /> : <Minimize2 size={13} color="#94a3b8" />}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"1px solid rgba(255,255,255,0.08)", background: compactMode ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
+              {compactMode ? <Maximize2 size={14} color="#a5b4fc" /> : <Minimize2 size={14} color="#94a3b8" />}
             </button>
             {/* Settings — Paramètres */}
-            <button title=""
+            <button title="" className="no-drag ao-icon-btn"
               onMouseEnter={e => showTip(e, "Paramètres")} onMouseLeave={hideTip}
               onClick={() => { setShortcutOpen(v => !v); setPendingShortcut(""); setCapturingShortcut(false); }}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: shortcutOpen ? "1px solid rgba(99,102,241,0.4)" : "1px solid rgba(255,255,255,0.08)", background: shortcutOpen ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", transition:"all 0.15s", flexShrink:0 }}>
-              <Settings size={13} color={shortcutOpen ? "#a5b4fc" : "#94a3b8"} />
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: shortcutOpen ? "1px solid rgba(99,102,241,0.4)" : "1px solid rgba(255,255,255,0.08)", background: shortcutOpen ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
+              <Settings size={14} color={shortcutOpen ? "#a5b4fc" : "#94a3b8"} />
             </button>
             {messages.length > 0 && (
               <button

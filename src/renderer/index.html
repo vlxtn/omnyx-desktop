@@ -122,6 +122,62 @@
         box-shadow: 0 4px 12px rgba(99,102,241,0.2) !important;
       }
 
+      /* Boutons icônes de la toolbar */
+      .ao-icon-btn {
+        transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        position: relative;
+        overflow: hidden;
+      }
+      .ao-icon-btn::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: rgba(255,255,255,0.25);
+        transform: scale(0);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .ao-icon-btn:hover {
+        transform: translateY(-1px) scale(1.1) !important;
+        background: rgba(255,255,255,0.1) !important;
+        box-shadow: 0 4px 14px rgba(99,102,241,0.2) !important;
+      }
+      .ao-icon-btn:active {
+        transform: scale(0.86) !important;
+        transition: transform 0.07s ease !important;
+      }
+      .ao-icon-btn:active::after {
+        animation: ripple 0.35s ease-out forwards;
+      }
+      @keyframes ripple {
+        from { transform: scale(0); opacity: 0.5; }
+        to   { transform: scale(2.8); opacity: 0; }
+      }
+
+      /* Send button */
+      .ao-send-btn {
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        position: relative;
+        overflow: hidden;
+      }
+      .ao-send-btn:hover:not(:disabled) {
+        transform: scale(1.12) !important;
+        box-shadow: 0 0 18px rgba(99,102,241,0.5) !important;
+      }
+      .ao-send-btn:active:not(:disabled) {
+        transform: scale(0.9) !important;
+        transition: transform 0.07s ease !important;
+      }
+      .ao-send-btn:active:not(:disabled)::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: rgba(255,255,255,0.3);
+        animation: ripple 0.3s ease-out forwards;
+      }
+
       input:focus, textarea:focus {
         animation: inputGlow 2s ease-in-out infinite;
         border-color: rgba(99,102,241,0.6) !important;
