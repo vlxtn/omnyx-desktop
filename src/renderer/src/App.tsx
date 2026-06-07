@@ -1298,7 +1298,7 @@ export default function App() {
         {messages.length > 0 ? (
           <div style={styles.messages}>
             {messages.map((m, i) => (
-              <div key={i} style={{ marginBottom: 12, display:"flex", flexDirection:"column", alignItems: m.role==="user"?"flex-end":"flex-start" }}
+              <div key={i} className={m.role === "user" ? "ao-msg-user" : "ao-msg-ai"} style={{ marginBottom: 12, display:"flex", flexDirection:"column", alignItems: m.role==="user"?"flex-end":"flex-start" }}
                 onMouseEnter={() => setHoveredMsgIdx(i)}
                 onMouseLeave={() => setHoveredMsgIdx(null)}>
                 {/* Header: name + time */}
@@ -1333,7 +1333,7 @@ export default function App() {
                   width:"100%",
                   maxWidth:"100%",
                 })}}
-                  className={m.role==="assistant" && loading && i===messages.length-1 ? "ao-cursor" : ""}>
+                  className={m.role==="assistant" && loading && i===messages.length-1 && m.content.length > 0 ? "ao-cursor" : ""}>
                   {m.role==="user" ? (
                     <>
                       {m.content}
@@ -1344,6 +1344,8 @@ export default function App() {
                         </div>
                       )}
                     </>
+                  ) : loading && i === messages.length - 1 && m.content.length === 0 ? (
+                    <div className="ao-typing-dots"><span /><span /><span /></div>
                   ) : (
                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
                       h1: ({children}) => <p style={{ color:"#e0e0ff", fontWeight:700, fontSize:13, marginBottom:5, marginTop:8, borderBottom:"1px solid rgba(255,255,255,0.08)", paddingBottom:4 }}>{children}</p>,
@@ -1378,6 +1380,7 @@ export default function App() {
                     <button
                       title="Copier la réponse"
                       onClick={async () => { await (window.api as any)?.writeClipboard(m.content); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 1500); }}
+                      className="ao-action-btn"
                       style={{ display:"flex", alignItems:"center", gap:5, background: copiedIdx === i ? "rgba(52,211,153,0.15)" : "rgba(99,102,241,0.12)", border: copiedIdx === i ? "1px solid rgba(52,211,153,0.4)" : "1px solid rgba(99,102,241,0.25)", borderRadius:7, padding:"4px 10px", cursor:"pointer", transition:"all 0.15s", color: copiedIdx === i ? "#34d399" : "rgba(165,180,252,0.8)", fontSize:11, fontFamily:"inherit" }}>
                       <span style={{ fontSize:12 }}>{copiedIdx === i ? "✓" : "⎘"}</span>
                       <span>{copiedIdx === i ? "Copié !" : "Copier"}</span>
