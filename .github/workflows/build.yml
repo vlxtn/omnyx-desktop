@@ -48,3 +48,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npx electron-builder --mac --publish always
+
+  trigger-app-rebuild:
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-mac]
+    steps:
+      - name: Trigger omnyx-app rebuild
+        run: |
+          gh workflow run build.yml --repo vlxtn/omnyx-app
+        env:
+          GH_TOKEN: ${{ secrets.OMNYX_APP_TOKEN }}
