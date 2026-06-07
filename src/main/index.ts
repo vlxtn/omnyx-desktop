@@ -259,6 +259,7 @@ function buildTrayMenu(): Electron.Menu {
     },
     { type: "separator" },
     { label: "Raccourci clavier…", click: () => showWindow() },
+    { label: "Vérifier les mises à jour", click: () => autoUpdater.checkForUpdates() },
     { type: "separator" },
     { label: "Quitter Omnyx", click: () => app.quit() },
   ]);
