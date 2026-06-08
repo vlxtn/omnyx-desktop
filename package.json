@@ -1,6 +1,6 @@
 {
   "name": "omnyx-desktop",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Omnyx Desktop AI Companion",
   "main": "out/main/index.js",
   "scripts": {
@@ -36,7 +36,7 @@
   },
   "build": {
     "appId": "com.omnyx.desktop",
-    "productName": "Omnyx",
+    "productName": "Omnyx Companion",
     "copyright": "Copyright © 2026 Omnyx",
     "directories": {
       "output": "dist",
