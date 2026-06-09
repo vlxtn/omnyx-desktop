@@ -1,6 +1,6 @@
 {
   "name": "omnyx-desktop",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Omnyx Desktop AI Companion",
   "main": "out/main/index.js",
   "scripts": {
@@ -66,11 +66,10 @@
       "artifactName": "Omnyx-Setup.exe"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "oneClick": true,
+      "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "Omnyx"
+      "shortcutName": "Omnyx Companion"
     },
     "mac": {
       "target": [
