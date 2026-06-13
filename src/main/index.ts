@@ -5,9 +5,24 @@ import * as fs from "fs";
 import * as childProcess from "child_process";
 import * as os from "os";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
+import WebSocket from "ws";
 import { registerSystemHandlers, getActiveBrowserUrl } from "./system";
 
 const API_BASE = "https://omnyx-backend-production.up.railway.app";
+
+// Notification push : dès qu'une release est publiée sur GitHub, le backend
+// nous prévient via ce WebSocket et on vérifie immédiatement les mises à jour.
+function connectUpdateSocket(): void {
+  const ws = new WebSocket(API_BASE.replace(/^http/, "ws") + "/api/ws/updates");
+  ws.on("message", (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === "update_available") autoUpdater.checkForUpdates();
+    } catch {}
+  });
+  ws.on("close", () => setTimeout(connectUpdateSocket, 10000));
+  ws.on("error", () => ws.close());
+}
 
 let commandWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -467,12 +482,13 @@ app.whenReady().then(() => {
 
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createCommandWindow(); });
 
-  // Auto-update — vérifie GitHub Releases au démarrage, puis très régulièrement
-  // (le companion reste ouvert en permanence : on veut qu'une nouvelle release
-  // soit récupérée quasi immédiatement après sa publication)
+  // Auto-update — vérifie GitHub Releases au démarrage, puis se branche sur le
+  // flux de notifications push du backend pour réagir instantanément à chaque
+  // nouvelle release (filet de sécurité : re-vérif toutes les 6h en plus).
   if (!is.dev) {
     autoUpdater.checkForUpdates();
-    setInterval(() => autoUpdater.checkForUpdates(), 2 * 60 * 1000);
+    setInterval(() => autoUpdater.checkForUpdates(), 6 * 60 * 60 * 1000);
+    connectUpdateSocket();
     autoUpdater.on("update-downloaded", (info) => {
       new Notification({
         title: "Omnyx — Mise à jour prête",
