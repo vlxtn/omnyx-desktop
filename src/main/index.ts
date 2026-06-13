@@ -467,11 +467,12 @@ app.whenReady().then(() => {
 
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createCommandWindow(); });
 
-  // Auto-update — vérifie GitHub Releases au démarrage, puis périodiquement
-  // (le companion reste ouvert en permanence, donc une seule vérif au lancement ne suffit pas)
+  // Auto-update — vérifie GitHub Releases au démarrage, puis très régulièrement
+  // (le companion reste ouvert en permanence : on veut qu'une nouvelle release
+  // soit récupérée quasi immédiatement après sa publication)
   if (!is.dev) {
     autoUpdater.checkForUpdates();
-    setInterval(() => autoUpdater.checkForUpdates(), 60 * 60 * 1000);
+    setInterval(() => autoUpdater.checkForUpdates(), 2 * 60 * 1000);
     autoUpdater.on("update-downloaded", (info) => {
       new Notification({
         title: "Omnyx — Mise à jour prête",
