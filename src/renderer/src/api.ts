@@ -28,7 +28,7 @@ export async function analyzeImage(base64: string, mime_type: string, question: 
     base64, mime_type, question,
     ...(conversationId ? { conversation_id: conversationId } : {}),
   }, { timeout: 120000 });
-  return data as { result: string };
+  return data as { result: string; conversation_id?: string };
 }
 
 export async function sendMessage(message: string, agentType = "executive") {

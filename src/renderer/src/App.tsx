@@ -662,6 +662,7 @@ export default function App() {
       if (currentAttachment?.type === "image" && currentAttachment.base64) {
         try {
           const result = await analyzeImage(currentAttachment.base64, currentAttachment.mime_type || "image/png", text || "Analyse cette image.", activeConversationId);
+          if (result.conversation_id) setActiveConversationId(result.conversation_id);
           setMessages(prev => [...prev, { role: "assistant", content: result.result || "" }]);
         } catch (e: any) {
           const detail = e?.response?.data?.detail || e?.message || "Erreur inconnue";
@@ -1092,6 +1093,7 @@ export default function App() {
                 if (screenshotResult?.success && screenshotResult.base64) {
                   const question = `Analyse en détail ce qui est affiché sur cette page.${pageUrl ? ` URL : ${pageUrl}` : ""} Décris le contenu, les informations clés, le statut, les données importantes, et tout ce qui est pertinent pour l'utilisateur.`;
                   const result = await analyzeImage(screenshotResult.base64, "image/png", question, activeConversationId);
+                  if (result.conversation_id) setActiveConversationId(result.conversation_id);
                   setMessages(prev => [...prev, { role: "assistant" as const, content: result.result || "", ts: now() }]);
                 } else {
                   setMessages(prev => [...prev, { role: "assistant" as const, content: "Impossible de capturer l'écran. Vérifie que Chrome est ouvert et réessaie." }]);
