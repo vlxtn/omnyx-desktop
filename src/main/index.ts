@@ -28,6 +28,7 @@ let commandWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isVisible = false;
 let lastKnownClipboard = "";
+let manualUpdateCheck = false;
 let selectionWatcher: childProcess.ChildProcess | null = null;
 
 const SELECTION_HOOK_CS = `
@@ -274,7 +275,13 @@ function buildTrayMenu(): Electron.Menu {
     },
     { type: "separator" },
     { label: "Raccourci clavier…", click: () => showWindow() },
-    { label: "Vérifier les mises à jour", click: () => autoUpdater.checkForUpdates() },
+    {
+      label: "Vérifier les mises à jour", click: () => {
+        manualUpdateCheck = true;
+        new Notification({ title: "Omnyx", body: "Recherche de mises à jour…", silent: true }).show();
+        autoUpdater.checkForUpdates().catch(() => {});
+      }
+    },
     { type: "separator" },
     { label: "Quitter Omnyx", click: () => app.quit() },
   ]);
@@ -495,6 +502,35 @@ app.whenReady().then(() => {
 
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createCommandWindow(); });
 
+  // Retours visibles uniquement pour la vérification manuelle (menu tray) —
+  // les vérifications automatiques (démarrage, push, 6h) restent silencieuses
+  // sauf quand une mise à jour est effectivement prête à installer.
+  autoUpdater.on("update-not-available", () => {
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      new Notification({ title: "Omnyx", body: "Tu as déjà la dernière version.", silent: true }).show();
+    }
+  });
+  autoUpdater.on("update-available", (info) => {
+    if (manualUpdateCheck) {
+      new Notification({ title: "Omnyx", body: `Mise à jour ${info.version} trouvée — téléchargement…`, silent: true }).show();
+    }
+  });
+  autoUpdater.on("error", (err) => {
+    if (manualUpdateCheck) {
+      manualUpdateCheck = false;
+      new Notification({ title: "Omnyx", body: `Erreur lors de la vérification : ${err?.message || err}`, silent: true }).show();
+    }
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    manualUpdateCheck = false;
+    new Notification({
+      title: "Omnyx — Mise à jour prête",
+      body: `Version ${info.version} sera installée au prochain lancement.`,
+    }).show();
+    autoUpdater.quitAndInstall(false, true);
+  });
+
   // Auto-update — vérifie GitHub Releases au démarrage, puis se branche sur le
   // flux de notifications push du backend pour réagir instantanément à chaque
   // nouvelle release (filet de sécurité : re-vérif toutes les 6h en plus).
@@ -502,13 +538,6 @@ app.whenReady().then(() => {
     autoUpdater.checkForUpdates();
     setInterval(() => autoUpdater.checkForUpdates(), 6 * 60 * 60 * 1000);
     connectUpdateSocket();
-    autoUpdater.on("update-downloaded", (info) => {
-      new Notification({
-        title: "Omnyx — Mise à jour prête",
-        body: `Version ${info.version} sera installée au prochain lancement.`,
-      }).show();
-      autoUpdater.quitAndInstall(false, true);
-    });
   }
 });
 
