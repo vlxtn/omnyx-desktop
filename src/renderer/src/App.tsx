@@ -423,6 +423,10 @@ export default function App() {
     };
 
     const OPEN_WORDS = ["ouvre", "lance", "demarre", "start", "open", "mets", "active", "utilise", "accede", "besoin", "veux", "peux tu ouvrir", "peut tu ouvrir", "pourrais tu ouvrir"];
+    // Mots sans ambiguïté : si l'app n'est pas reconnue, on tente quand même de
+    // l'ouvrir. Les autres (veux, mets, utilise...) sont trop fréquents dans des
+    // phrases normales pour servir à deviner un nom d'appli inconnu.
+    const STRONG_OPEN_WORDS = ["ouvre", "lance", "demarre", "start", "open", "peux tu ouvrir", "peut tu ouvrir", "pourrais tu ouvrir"];
     const FILE_WORDS = ["trouve", "cherche", "recherche", "localise", "ou est"];
 
     // Rappel / reminder → ouvre directement le panneau de fréquence
@@ -467,15 +471,23 @@ export default function App() {
     }
 
     const hasOpen = OPEN_WORDS.some(w => t.includes(norm(w)));
+    const hasStrongOpen = STRONG_OPEN_WORDS.some(w => t.includes(norm(w)));
     const hasFile = FILE_WORDS.some(w => t.includes(norm(w)));
     const looksLikeUrl = /\.(com|fr|io|net|org|co|app|dev)/.test(t) || t.includes("http") || t.includes("www");
 
     // Detect app anywhere in the text
     const foundAppKey = Object.keys(APP_MAP).sort((a, b) => b.length - a.length).find(k => t.includes(norm(k)));
 
-    // Open app — known or unknown
+    // Open app — known, ou inconnu si déclenché par un mot d'ouverture explicite
     if (hasOpen && !looksLikeUrl) {
-      const appName = foundAppKey ? APP_MAP[foundAppKey] : text.replace(/^.*(ouvre|lance|demarre|start|mets|active|utilise|besoin de|veux)\s+/i, "").replace(/[?!.]/g, "").trim();
+      let appName = "";
+      if (foundAppKey) {
+        appName = APP_MAP[foundAppKey];
+      } else if (hasStrongOpen) {
+        const candidate = text.replace(/^.*(ouvre|lance|demarre|start|open|peux tu ouvrir|peut tu ouvrir|pourrais tu ouvrir)\s+/i, "").replace(/[?!.]/g, "").trim();
+        // Un nom d'appli est court — une phrase entière n'en est pas un.
+        if (candidate && candidate.split(/\s+/).length <= 4) appName = candidate;
+      }
       if (appName) {
         // @ts-ignore
         const result = await window.api?.openApp(appName);
