@@ -771,8 +771,12 @@ export default function App() {
   };
 
   const injectIntoApp = async (text: string) => {
-    // @ts-ignore
-    await window.api?.pasteToActiveApp(text);
+    try {
+      // @ts-ignore
+      await window.api?.pasteToActiveApp(text);
+    } catch (e) {
+      console.error("injectIntoApp failed", e);
+    }
   };
 
   useEffect(() => {

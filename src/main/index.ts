@@ -354,16 +354,29 @@ app.whenReady().then(() => {
     clipboard.writeText(text);
     commandWindow?.hide();
     isVisible = false;
-    await new Promise(r => setTimeout(r, 350));
+    await new Promise(r => setTimeout(r, 400));
+
+    let pasted = false;
     try {
       childProcess.execSync(
         `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"`,
         { windowsHide: true }
       );
+      pasted = true;
     } catch {}
+
     commandWindow?.show();
     commandWindow?.focus();
     isVisible = true;
+
+    // Toujours donner un retour visible : si le collage automatique échoue
+    // (ex. app cible avec privilèges élevés bloquant SendKeys), le texte
+    // reste dans le presse-papiers et l'utilisateur peut coller manuellement.
+    new Notification({
+      title: "Omnyx",
+      body: pasted ? "Texte injecté dans l'application active." : "Texte copié — utilise Ctrl+V pour le coller.",
+      silent: true,
+    }).show();
   });
 
   // Vérification des tâches toutes les 60 secondes
