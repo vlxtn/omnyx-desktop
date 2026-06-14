@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft } from "lucide-react";
+import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check, ArrowUpRight } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
 import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
@@ -120,6 +120,7 @@ export default function App() {
   const [writeFormat, setWriteFormat] = useState("email");
   const [writeTone, setWriteTone] = useState("professionnel");
   const [writeForMeAttach, setWriteForMeAttach] = useState<{ name: string; content: string } | null>(null);
+  const [writeForMeCopied, setWriteForMeCopied] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [capturingShortcut, setCapturingShortcut] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+Space");
@@ -754,6 +755,7 @@ export default function App() {
     if (!writeForMePrompt.trim() || writeForMeLoading) return;
     setWriteForMeLoading(true);
     setWriteForMeResult("");
+    setWriteForMeCopied(false);
     const FORMAT_LABELS: Record<string, string> = { email: "un email", message: "un message", post: "un post réseaux sociaux", rapport: "un rapport", autre: "un texte" };
     const TONE_LABELS: Record<string, string> = { professionnel: "professionnel", decontracte: "décontracté et naturel", creatif: "créatif et original", persuasif: "persuasif et convaincant" };
     const attachContext = writeForMeAttach
@@ -1843,18 +1845,40 @@ export default function App() {
             {/* Résultat */}
             {writeForMeResult && (
               <div style={{ marginTop:8 }}>
-                <div style={{ background:"rgba(0,0,0,0.3)", border:"1px solid rgba(99,102,241,0.2)", borderRadius:8, padding:"8px 10px", maxHeight:120, overflowY:"auto" as const }}>
-                  <p style={{ fontSize:11, color:"#c4c4d8", lineHeight:1.6, whiteSpace:"pre-wrap" as const, margin:0 }}>{writeForMeResult}</p>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5, padding:"0 1px" }}>
+                  <span style={{ fontSize:9, fontWeight:700, color:"rgba(165,180,252,0.5)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>
+                    Résultat — modifiable
+                  </span>
+                  <span style={{ fontSize:10, color:"rgba(255,255,255,0.25)" }}>{writeForMeResult.length} caractères</span>
                 </div>
+                <textarea
+                  className="no-drag"
+                  value={writeForMeResult}
+                  onChange={e => setWriteForMeResult(e.target.value)}
+                  spellCheck={false}
+                  style={{
+                    width:"100%", boxSizing:"border-box" as const, display:"block",
+                    background:"rgba(0,0,0,0.3)", border:"1px solid rgba(99,102,241,0.25)",
+                    borderRadius:8, padding:"8px 10px", color:"#dadae6", fontSize:11,
+                    lineHeight:1.6, fontFamily:"inherit", whiteSpace:"pre-wrap" as const,
+                    resize:"vertical" as const, minHeight:70, maxHeight:200, outline:"none",
+                  }}
+                />
                 <div style={{ display:"flex", gap:6, marginTop:6 }}>
-                  <button className="no-drag" onClick={() => { navigator.clipboard.writeText(writeForMeResult); }}
-                    style={{ flex:1, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:7, color:"#a5b4fc", fontSize:11, cursor:"pointer", padding:"5px 0" }}>
-                    ⎘ Copier
+                  <button className="no-drag" onClick={() => {
+                      navigator.clipboard.writeText(writeForMeResult);
+                      setWriteForMeCopied(true);
+                      setTimeout(() => setWriteForMeCopied(false), 1500);
+                    }}
+                    style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:7, color:"#a5b4fc", fontSize:11, cursor:"pointer", padding:"6px 0" }}>
+                    {writeForMeCopied ? <Check size={12} /> : <Copy size={12} />}
+                    {writeForMeCopied ? "Copié" : "Copier"}
                   </button>
                   <button className="no-drag" onClick={() => injectIntoApp(writeForMeResult)}
                     title="Cache le compagnon et colle le texte dans l'app active"
-                    style={{ flex:1, background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.3)", borderRadius:7, color:"#6ee7b7", fontSize:11, cursor:"pointer", padding:"5px 0" }}>
-                    ↗ Injecter
+                    style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5, background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.3)", borderRadius:7, color:"#6ee7b7", fontSize:11, cursor:"pointer", padding:"6px 0" }}>
+                    <ArrowUpRight size={12} />
+                    Injecter
                   </button>
                 </div>
               </div>
