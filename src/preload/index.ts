@@ -31,7 +31,6 @@ const api = {
   onClipboardImage: (cb: (base64: string) => void) => ipcRenderer.on("clipboard-image", (_, base64) => cb(base64)),
   onTextSelected: (cb: (text: string) => void) => ipcRenderer.on("text-selected", (_, text) => cb(text)),
   setAutoDetectText: (enabled: boolean) => ipcRenderer.send("set-auto-detect-text", enabled),
-  pasteToActiveApp: (text: string) => ipcRenderer.invoke("paste-to-active-app", text),
 };
 
 if (process.contextIsolated) {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check, ArrowUpRight } from "lucide-react";
+import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
 import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
@@ -121,7 +121,6 @@ export default function App() {
   const [writeTone, setWriteTone] = useState("professionnel");
   const [writeForMeAttach, setWriteForMeAttach] = useState<{ name: string; content: string } | null>(null);
   const [writeForMeCopied, setWriteForMeCopied] = useState(false);
-  const [injectToast, setInjectToast] = useState<null | "pasted" | "copied">(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [capturingShortcut, setCapturingShortcut] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+Space");
@@ -773,17 +772,6 @@ export default function App() {
     finally { setWriteForMeLoading(false); }
   };
 
-  const injectIntoApp = async (text: string) => {
-    try {
-      // @ts-ignore
-      const pasted: boolean = await window.api?.pasteToActiveApp(text);
-      setInjectToast(pasted ? "pasted" : "copied");
-    } catch (e) {
-      console.error("injectIntoApp failed", e);
-      setInjectToast("copied");
-    }
-    setTimeout(() => setInjectToast(null), 2500);
-  };
 
   useEffect(() => {
     if (timerRunning) {
@@ -842,12 +830,6 @@ export default function App() {
       {tooltip && (
         <div style={{ position:"fixed", left:tooltip.x, top:tooltip.y, transform:"translateX(-50%)", background:"rgba(10,10,20,0.95)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, padding:"4px 9px", fontSize:10, color:"rgba(255,255,255,0.85)", whiteSpace:"nowrap" as const, zIndex:9999, pointerEvents:"none" as const, boxShadow:"0 4px 12px rgba(0,0,0,0.5)", letterSpacing:"0.02em" }}>
           {tooltip.text}
-        </div>
-      )}
-      {injectToast && (
-        <div style={{ position:"fixed", top:10, left:"50%", transform:"translateX(-50%)", display:"flex", alignItems:"center", gap:6, background: injectToast === "pasted" ? "rgba(16,185,129,0.95)" : "rgba(99,102,241,0.95)", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:600, color:"white", whiteSpace:"nowrap" as const, zIndex:9999, pointerEvents:"none" as const, boxShadow:"0 6px 20px rgba(0,0,0,0.5)" }}>
-          {injectToast === "pasted" ? <Check size={13} /> : <Copy size={13} />}
-          {injectToast === "pasted" ? "Texte injecté dans l'application active" : "Copié — utilise Ctrl+V pour coller"}
         </div>
       )}
       <div style={{
@@ -1854,12 +1836,15 @@ export default function App() {
             </div>
             {/* Résultat */}
             {writeForMeResult && (
-              <div style={{ marginTop:8 }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5, padding:"0 1px" }}>
-                  <span style={{ fontSize:9, fontWeight:700, color:"rgba(165,180,252,0.5)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>
-                    Résultat — modifiable
-                  </span>
-                  <span style={{ fontSize:10, color:"rgba(255,255,255,0.25)" }}>{writeForMeResult.length} caractères</span>
+              <div className="ao-panel" style={{ marginTop:10, background:"linear-gradient(135deg, rgba(99,102,241,0.09), rgba(139,92,246,0.05))", border:"1px solid rgba(99,102,241,0.2)", borderRadius:10, padding:10 }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                    <Sparkles size={11} color="#a5b4fc" />
+                    <span style={{ fontSize:9, fontWeight:700, color:"rgba(165,180,252,0.7)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>
+                      Résultat — modifiable
+                    </span>
+                  </div>
+                  <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>{writeForMeResult.length} caractères</span>
                 </div>
                 <textarea
                   className="no-drag"
@@ -1868,29 +1853,22 @@ export default function App() {
                   spellCheck={false}
                   style={{
                     width:"100%", boxSizing:"border-box" as const, display:"block",
-                    background:"rgba(0,0,0,0.3)", border:"1px solid rgba(99,102,241,0.25)",
-                    borderRadius:8, padding:"8px 10px", color:"#dadae6", fontSize:11,
-                    lineHeight:1.6, fontFamily:"inherit", whiteSpace:"pre-wrap" as const,
-                    resize:"vertical" as const, minHeight:70, maxHeight:200, outline:"none",
+                    background:"rgba(0,0,0,0.35)", border:"1px solid rgba(99,102,241,0.2)",
+                    borderRadius:8, padding:"10px 12px", color:"#e4e4ed", fontSize:12,
+                    lineHeight:1.7, fontFamily:"inherit", whiteSpace:"pre-wrap" as const,
+                    resize:"vertical" as const, minHeight:80, maxHeight:200, outline:"none",
+                    boxShadow:"inset 0 1px 4px rgba(0,0,0,0.3)",
                   }}
                 />
-                <div style={{ display:"flex", gap:6, marginTop:6 }}>
-                  <button className="no-drag" onClick={() => {
-                      navigator.clipboard.writeText(writeForMeResult);
-                      setWriteForMeCopied(true);
-                      setTimeout(() => setWriteForMeCopied(false), 1500);
-                    }}
-                    style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:7, color:"#a5b4fc", fontSize:11, cursor:"pointer", padding:"6px 0" }}>
-                    {writeForMeCopied ? <Check size={12} /> : <Copy size={12} />}
-                    {writeForMeCopied ? "Copié" : "Copier"}
-                  </button>
-                  <button className="no-drag" onClick={() => injectIntoApp(writeForMeResult)}
-                    title="Cache le compagnon et colle le texte dans l'app active"
-                    style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5, background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.3)", borderRadius:7, color:"#6ee7b7", fontSize:11, cursor:"pointer", padding:"6px 0" }}>
-                    <ArrowUpRight size={12} />
-                    Injecter
-                  </button>
-                </div>
+                <button className="no-drag" onClick={() => {
+                    navigator.clipboard.writeText(writeForMeResult);
+                    setWriteForMeCopied(true);
+                    setTimeout(() => setWriteForMeCopied(false), 1500);
+                  }}
+                  style={{ width:"100%", marginTop:8, display:"flex", alignItems:"center", justifyContent:"center", gap:6, background: writeForMeCopied ? "rgba(16,185,129,0.18)" : "linear-gradient(135deg,#6366f1,#8b5cf6)", border: writeForMeCopied ? "1px solid rgba(16,185,129,0.4)" : "none", borderRadius:7, color: writeForMeCopied ? "#6ee7b7" : "white", fontSize:11, fontWeight:600, cursor:"pointer", padding:"7px 0", transition:"background 0.15s, color 0.15s" }}>
+                  {writeForMeCopied ? <Check size={13} /> : <Copy size={13} />}
+                  {writeForMeCopied ? "Copié dans le presse-papiers" : "Copier"}
+                </button>
               </div>
             )}
           </div>
