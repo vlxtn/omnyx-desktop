@@ -1770,7 +1770,7 @@ export default function App() {
 
         {/* Panneau Écris pour moi */}
         {writeForMeMode && (
-          <div style={{ padding:"10px 16px", borderTop:"1px solid rgba(99,102,241,0.2)", background:"rgba(99,102,241,0.04)" }}>
+          <div style={{ padding:"10px 16px", borderTop:"1px solid rgba(99,102,241,0.2)", background:"rgba(99,102,241,0.04)", maxHeight:280, overflowY:"auto" as const }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                 <PenLine size={11} color="#a5b4fc" />
