@@ -737,6 +737,10 @@ export default function App() {
       if (doneData?.actions?.length) {
         const actionResults: string[] = [];
         for (const action of doneData.actions.slice(0, 3)) {
+          if (action.action_type === "create_task" && action.data?.title) {
+            setPendingTask(action.data.title);
+            continue;
+          }
           const result = await executeAction(action);
           if (result) actionResults.push(result);
         }
