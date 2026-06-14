@@ -384,6 +384,8 @@ app.whenReady().then(() => {
       body: pasted ? "Texte injecté dans l'application active." : "Texte copié — utilise Ctrl+V pour le coller.",
       silent: true,
     }).show();
+
+    return pasted;
   });
 
   // Vérification des tâches toutes les 60 secondes

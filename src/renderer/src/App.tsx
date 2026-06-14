@@ -121,6 +121,7 @@ export default function App() {
   const [writeTone, setWriteTone] = useState("professionnel");
   const [writeForMeAttach, setWriteForMeAttach] = useState<{ name: string; content: string } | null>(null);
   const [writeForMeCopied, setWriteForMeCopied] = useState(false);
+  const [injectToast, setInjectToast] = useState<null | "pasted" | "copied">(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [capturingShortcut, setCapturingShortcut] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+Space");
@@ -775,10 +776,13 @@ export default function App() {
   const injectIntoApp = async (text: string) => {
     try {
       // @ts-ignore
-      await window.api?.pasteToActiveApp(text);
+      const pasted: boolean = await window.api?.pasteToActiveApp(text);
+      setInjectToast(pasted ? "pasted" : "copied");
     } catch (e) {
       console.error("injectIntoApp failed", e);
+      setInjectToast("copied");
     }
+    setTimeout(() => setInjectToast(null), 2500);
   };
 
   useEffect(() => {
@@ -838,6 +842,12 @@ export default function App() {
       {tooltip && (
         <div style={{ position:"fixed", left:tooltip.x, top:tooltip.y, transform:"translateX(-50%)", background:"rgba(10,10,20,0.95)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, padding:"4px 9px", fontSize:10, color:"rgba(255,255,255,0.85)", whiteSpace:"nowrap" as const, zIndex:9999, pointerEvents:"none" as const, boxShadow:"0 4px 12px rgba(0,0,0,0.5)", letterSpacing:"0.02em" }}>
           {tooltip.text}
+        </div>
+      )}
+      {injectToast && (
+        <div style={{ position:"fixed", top:10, left:"50%", transform:"translateX(-50%)", display:"flex", alignItems:"center", gap:6, background: injectToast === "pasted" ? "rgba(16,185,129,0.95)" : "rgba(99,102,241,0.95)", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:600, color:"white", whiteSpace:"nowrap" as const, zIndex:9999, pointerEvents:"none" as const, boxShadow:"0 6px 20px rgba(0,0,0,0.5)" }}>
+          {injectToast === "pasted" ? <Check size={13} /> : <Copy size={13} />}
+          {injectToast === "pasted" ? "Texte injecté dans l'application active" : "Copié — utilise Ctrl+V pour coller"}
         </div>
       )}
       <div style={{
