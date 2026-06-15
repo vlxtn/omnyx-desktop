@@ -471,17 +471,48 @@ export default function App() {
       }
     }
 
-    // Capture d'écran demandée à l'oral/écrit → capture + analyse directement, sans bouton
-    const SCREENSHOT_WORDS = [
+    // "Fais une capture d'écran" → capture réelle, attachée au message pour modification avant envoi
+    const TAKE_SCREENSHOT_WORDS = [
       "capture d'ecran", "capture decran", "capture ecran", "capture de l'ecran",
       "capture mon ecran", "capture l'ecran", "screenshot",
       "fais une capture", "fait une capture", "prends une capture", "prend une capture",
       "fais un screenshot", "prends un screenshot",
-      "regarde mon ecran", "analyse mon ecran", "analyse l'ecran",
     ];
-    const hasScreenshot = SCREENSHOT_WORDS.some(w => t.includes(norm(w)))
+    const hasTakeScreenshot = TAKE_SCREENSHOT_WORDS.some(w => t.includes(norm(w)))
       || /captur\w*.{0,8}ecran/.test(t) || /ecran.{0,8}captur\w*/.test(t);
-    if (hasScreenshot) {
+
+    // "Qu'est-ce qui se passe sur mon écran ?" → capture + analyse, réponse directe
+    const ANALYZE_SCREEN_WORDS = [
+      "qu'est-ce qui se passe sur mon ecran", "qu'est ce qui se passe sur mon ecran", "qu est ce qui se passe sur mon ecran",
+      "que se passe-t-il sur mon ecran", "que se passe t il sur mon ecran",
+      "qu'est-ce qu'il y a sur mon ecran", "qu'est ce qu'il y a sur mon ecran",
+      "que vois-tu sur mon ecran", "que vois tu sur mon ecran",
+      "regarde mon ecran", "decris mon ecran", "decris l'ecran",
+      "analyse mon ecran", "analyse l'ecran",
+    ];
+    const hasAnalyzeScreen = ANALYZE_SCREEN_WORDS.some(w => t.includes(norm(w)))
+      || /ecran.{0,15}(passe|affiche|y a|vois)/.test(t) || /(passe|affiche|y a|vois).{0,15}ecran/.test(t);
+
+    if (hasTakeScreenshot) {
+      try {
+        // @ts-ignore
+        const result = await window.api?.captureScreen();
+        if (result?.success && result.base64) {
+          const blob = await fetch(`data:image/png;base64,${result.base64}`).then(r => r.blob());
+          const file = new File([blob], "capture-ecran.png", { type: "image/png" });
+          const data = await uploadFile(file);
+          setAttachedFile({ name: data.name, type: data.type, content: data.content, base64: data.base64, mime_type: data.mime_type });
+          setInput(prev => prev || "Analyse cet écran");
+          setTimeout(() => inputRef.current?.focus(), 100);
+          return { handled: true, result: "📸 Capture d'écran prête — modifie le message si besoin puis envoie." };
+        }
+        return { handled: true, result: "Impossible de capturer l'écran." };
+      } catch {
+        return { handled: true, result: "Erreur lors de la capture d'écran." };
+      }
+    }
+
+    if (hasAnalyzeScreen) {
       try {
         // @ts-ignore
         const result = await window.api?.captureScreen();
