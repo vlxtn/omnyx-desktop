@@ -471,7 +471,7 @@ export default function App() {
       }
     }
 
-    // "Fais une capture d'écran" → capture réelle, attachée au message pour modification avant envoi
+    // "Fais une capture d'écran" → ouvre l'outil de capture natif Windows (Win+Maj+S), modifiable/annotable ensuite
     const TAKE_SCREENSHOT_WORDS = [
       "capture d'ecran", "capture decran", "capture ecran", "capture de l'ecran",
       "capture mon ecran", "capture l'ecran", "screenshot",
@@ -496,19 +496,10 @@ export default function App() {
     if (hasTakeScreenshot) {
       try {
         // @ts-ignore
-        const result = await window.api?.captureScreen();
-        if (result?.success && result.base64) {
-          const blob = await fetch(`data:image/png;base64,${result.base64}`).then(r => r.blob());
-          const file = new File([blob], "capture-ecran.png", { type: "image/png" });
-          const data = await uploadFile(file);
-          setAttachedFile({ name: data.name, type: data.type, content: data.content, base64: data.base64, mime_type: data.mime_type });
-          setInput(prev => prev || "Analyse cet écran");
-          setTimeout(() => inputRef.current?.focus(), 100);
-          return { handled: true, result: "📸 Capture d'écran prête — modifie le message si besoin puis envoie." };
-        }
-        return { handled: true, result: "Impossible de capturer l'écran." };
+        await window.api?.openUrl("ms-screenclip:");
+        return { handled: true, result: "✂️ Outil de capture d'écran ouvert — sélectionne ta zone, elle s'ouvrira dans l'éditeur pour que tu puisses l'annoter et l'enregistrer." };
       } catch {
-        return { handled: true, result: "Erreur lors de la capture d'écran." };
+        return { handled: true, result: "Impossible d'ouvrir l'outil de capture d'écran." };
       }
     }
 
