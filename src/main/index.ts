@@ -68,10 +68,20 @@ public class OmnyxSelectionHook {
                 Thread.Sleep(160);
                 string cur = "";
                 try { if (Clipboard.ContainsText()) cur = Clipboard.GetText() ?? ""; } catch {}
-                if (cur != prev && cur.Length >= 10 && cur.Length <= 3000 && cur != lastReported) {
-                    lastReported = cur;
-                    Console.WriteLine(Convert.ToBase64String(Encoding.UTF8.GetBytes(cur)));
-                    Console.Out.Flush();
+                if (cur != prev && cur.Length >= 10 && cur.Length <= 3000) {
+                    // Marque ce contenu comme exclu du traitement "Actions suggérées" de Windows
+                    // (popup de traduction/recherche qui apparaît sinon après chaque copie simulée)
+                    try {
+                        var data = new DataObject();
+                        data.SetData(DataFormats.UnicodeText, cur);
+                        data.SetData("ExcludeClipboardContentFromMonitorProcessing", true);
+                        Clipboard.SetDataObject(data, true);
+                    } catch {}
+                    if (cur != lastReported) {
+                        lastReported = cur;
+                        Console.WriteLine(Convert.ToBase64String(Encoding.UTF8.GetBytes(cur)));
+                        Console.Out.Flush();
+                    }
                 }
             });
             t.SetApartmentState(ApartmentState.STA);
