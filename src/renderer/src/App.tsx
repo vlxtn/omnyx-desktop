@@ -482,17 +482,8 @@ export default function App() {
     const hasTakeScreenshot = TAKE_SCREENSHOT_WORDS.some(w => t.includes(norm(w)))
       || /captur\w*.{0,8}ecran/.test(t) || /ecran.{0,8}captur\w*/.test(t);
 
-    // "Qu'est-ce qui se passe sur mon écran ?" → capture + analyse, réponse directe
-    const ANALYZE_SCREEN_WORDS = [
-      "qu'est-ce qui se passe sur mon ecran", "qu'est ce qui se passe sur mon ecran", "qu est ce qui se passe sur mon ecran",
-      "que se passe-t-il sur mon ecran", "que se passe t il sur mon ecran",
-      "qu'est-ce qu'il y a sur mon ecran", "qu'est ce qu'il y a sur mon ecran",
-      "que vois-tu sur mon ecran", "que vois tu sur mon ecran",
-      "regarde mon ecran", "decris mon ecran", "decris l'ecran",
-      "analyse mon ecran", "analyse l'ecran",
-    ];
-    const hasAnalyzeScreen = ANALYZE_SCREEN_WORDS.some(w => t.includes(norm(w)))
-      || /ecran.{0,15}(passe|affiche|y a|vois)/.test(t) || /(passe|affiche|y a|vois).{0,15}ecran/.test(t);
+    // Toute question/demande mentionnant "écran" (hors demande de capture) → capture + analyse, réponse directe
+    const hasAnalyzeScreen = !hasTakeScreenshot && /\becran\b/.test(t);
 
     if (hasTakeScreenshot) {
       try {
