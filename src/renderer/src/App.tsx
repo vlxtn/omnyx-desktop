@@ -477,6 +477,7 @@ export default function App() {
       "capture mon ecran", "capture l'ecran", "screenshot",
       "fais une capture", "fait une capture", "prends une capture", "prend une capture",
       "fais un screenshot", "prends un screenshot",
+      "un screen", "le screen", "ce screen",
     ];
     const hasTakeScreenshot = TAKE_SCREENSHOT_WORDS.some(w => t.includes(norm(w)))
       || /captur\w*.{0,8}ecran/.test(t) || /ecran.{0,8}captur\w*/.test(t);
