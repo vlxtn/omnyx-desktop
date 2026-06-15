@@ -399,7 +399,8 @@ export default function App() {
   const handleIntent = useCallback(async (text: string) => {
     const norm = (s: string) => s.toLowerCase()
       .replace(/[éèêë]/g, "e").replace(/[àâä]/g, "a").replace(/[ùûü]/g, "u")
-      .replace(/[îï]/g, "i").replace(/[ôö]/g, "o").replace(/[ç]/g, "c");
+      .replace(/[îï]/g, "i").replace(/[ôö]/g, "o").replace(/[ç]/g, "c")
+      .replace(/[‘’ʼ´`]/g, "'");
     const _norm2 = (s: string) => s.toLowerCase()
       .replace(/[éèêë]/g, "e").replace(/[àâä]/g, "a").replace(/[ùûü]/g, "u")
       .replace(/[îï]/g, "i").replace(/[ôö]/g, "o").replace(/[ç]/g, "c")
@@ -478,7 +479,8 @@ export default function App() {
       "fais un screenshot", "prends un screenshot",
       "regarde mon ecran", "analyse mon ecran", "analyse l'ecran",
     ];
-    const hasScreenshot = SCREENSHOT_WORDS.some(w => t.includes(norm(w)));
+    const hasScreenshot = SCREENSHOT_WORDS.some(w => t.includes(norm(w)))
+      || /captur\w*.{0,8}ecran/.test(t) || /ecran.{0,8}captur\w*/.test(t);
     if (hasScreenshot) {
       try {
         // @ts-ignore
