@@ -470,6 +470,31 @@ export default function App() {
       }
     }
 
+    // Capture d'écran demandée à l'oral/écrit → capture + analyse directement, sans bouton
+    const SCREENSHOT_WORDS = [
+      "capture d'ecran", "capture decran", "capture ecran", "capture de l'ecran",
+      "capture mon ecran", "capture l'ecran", "screenshot",
+      "fais une capture", "fait une capture", "prends une capture", "prend une capture",
+      "fais un screenshot", "prends un screenshot",
+      "regarde mon ecran", "analyse mon ecran", "analyse l'ecran",
+    ];
+    const hasScreenshot = SCREENSHOT_WORDS.some(w => t.includes(norm(w)));
+    if (hasScreenshot) {
+      try {
+        // @ts-ignore
+        const result = await window.api?.captureScreen();
+        if (result?.success && result.base64) {
+          const question = text || "Analyse cet écran.";
+          const data = await analyzeImage(result.base64, "image/png", question, activeConversationId);
+          if (data.conversation_id) setActiveConversationId(data.conversation_id);
+          return { handled: true, result: data.result || "" };
+        }
+        return { handled: true, result: "Impossible de capturer l'écran." };
+      } catch {
+        return { handled: true, result: "Erreur lors de la capture d'écran." };
+      }
+    }
+
     const hasOpen = OPEN_WORDS.some(w => t.includes(norm(w)));
     const hasStrongOpen = STRONG_OPEN_WORDS.some(w => t.includes(norm(w)));
     const hasFile = FILE_WORDS.some(w => t.includes(norm(w)));
@@ -618,7 +643,7 @@ export default function App() {
     }
 
     return { handled: false };
-  }, []);
+  }, [activeConversationId]);
 
   const executeAction = useCallback(async (action: { action_type: string; data: Record<string, string> }) => {
     const { action_type, data } = action;
