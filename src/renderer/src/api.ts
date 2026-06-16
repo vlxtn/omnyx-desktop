@@ -101,12 +101,17 @@ export async function createTask(title: string, priority: Task["priority"] = "me
 }
 
 export async function transcribeAudio(blob: Blob): Promise<string> {
-  const form = new FormData();
-  form.append("audio", blob, "audio.webm");
-  const { data } = await api.post("/api/voice/transcribe", form, {
-    headers: { "Content-Type": undefined },
-    timeout: 30000,
-  });
+  const arrayBuffer = await blob.arrayBuffer();
+  const uint8 = new Uint8Array(arrayBuffer);
+  let binary = "";
+  const chunk = 8192;
+  for (let i = 0; i < uint8.length; i += chunk)
+    binary += String.fromCharCode(...(uint8.subarray(i, i + chunk) as any));
+  const audio_b64 = btoa(binary);
+  const { data } = await api.post("/api/voice/transcribe",
+    { audio_b64, mime_type: blob.type || "audio/webm" },
+    { timeout: 45000 }
+  );
   return (data.transcript as string) || "";
 }
 
