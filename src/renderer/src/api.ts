@@ -100,6 +100,11 @@ export async function createTask(title: string, priority: Task["priority"] = "me
   return data as Task;
 }
 
+export async function approveAction(action_id: string, approved: boolean) {
+  const { data } = await api.post("/api/actions/approve", { action_id, approved });
+  return data;
+}
+
 export async function searchConversations(q: string) {
   const { data } = await api.get(`/api/chat/search?q=${encodeURIComponent(q)}`);
   return data as SearchResult[];

@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
-import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
+import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, approveAction, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
 import { fetchStale } from "./stale";
 import { detectContext, AppContext } from "./contexts";
 import { generateSuggestions } from "./suggestions";
@@ -92,6 +92,7 @@ export default function App() {
   const fileSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingTask, setPendingTask] = useState<string | null>(null);
   const [pendingReminder, setPendingReminder] = useState<string | null>(null);
+  const [pendingEvent, setPendingEvent] = useState<{ id: string; title: string; start: string; end: string; location?: string } | null>(null);
   const [reminderDelay, setReminderDelay] = useState<{ ms: number; label: string } | null>(null);
   const [currentContext, setCurrentContext] = useState<AppContext | null>(null);
   const [currentUrl, setCurrentUrl] = useState("");
@@ -773,6 +774,10 @@ export default function App() {
         for (const action of doneData.actions.slice(0, 3)) {
           if (action.action_type === "create_task" && action.data?.title) {
             setPendingTask(action.data.title);
+            continue;
+          }
+          if (action.action_type === "schedule_event" && (action as any).id && action.data?.title) {
+            setPendingEvent({ id: (action as any).id, title: action.data.title, start: action.data.start, end: action.data.end, location: action.data.location });
             continue;
           }
           const result = await executeAction(action);
@@ -1704,6 +1709,45 @@ export default function App() {
           </div>
         )}
 
+
+        {/* Confirmation événement calendrier */}
+        {pendingEvent && (
+          <div className="ao-panel" style={{ padding: "10px 16px", borderTop: "1px solid rgba(236,72,153,0.25)", background: "rgba(236,72,153,0.05)" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ fontSize:10, fontWeight:700, color:"rgba(249,168,212,0.9)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>📅 Événement à confirmer</span>
+              <button className="no-drag" onClick={() => setPendingEvent(null)} style={{ background:"none", border:"none", cursor:"pointer", color:"#555", fontSize:13, padding:"0 2px" }}>✕</button>
+            </div>
+            <p style={{ fontSize:12, fontWeight:600, color:"#f9a8d4", marginBottom:3 }}>{pendingEvent.title}</p>
+            <p style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginBottom:2 }}>
+              {pendingEvent.start ? new Date(pendingEvent.start).toLocaleString("fr-FR", { weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" }) : ""}
+              {pendingEvent.end ? ` → ${new Date(pendingEvent.end).toLocaleString("fr-FR", { hour:"2-digit", minute:"2-digit" })}` : ""}
+            </p>
+            {pendingEvent.location ? <p style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:6 }}>📍 {pendingEvent.location}</p> : <div style={{ marginBottom:8 }} />}
+            <div style={{ display:"flex", gap:6 }}>
+              <button className="no-drag" style={{ flex:1, background:"rgba(236,72,153,0.2)", border:"1px solid rgba(236,72,153,0.4)", borderRadius:8, color:"#f9a8d4", fontSize:11, cursor:"pointer", padding:"6px 4px" }}
+                onClick={async () => {
+                  const ev = pendingEvent;
+                  setPendingEvent(null);
+                  try {
+                    await approveAction(ev.id, true);
+                    setMessages(prev => [...prev, { role:"assistant" as const, content:`✅ Événement ajouté au calendrier : **${ev.title}**` }]);
+                  } catch {
+                    setMessages(prev => [...prev, { role:"assistant" as const, content:"Erreur lors de l'ajout au calendrier." }]);
+                  }
+                }}>
+                ✅ Confirmer
+              </button>
+              <button className="no-drag" style={{ flex:1, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"#888", fontSize:11, cursor:"pointer", padding:"6px 4px" }}
+                onClick={async () => {
+                  const ev = pendingEvent;
+                  setPendingEvent(null);
+                  try { await approveAction(ev.id, false); } catch {}
+                }}>
+                ✕ Annuler
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Sélecteur de rappel — étape 1 : quand ? */}
         {pendingReminder && !reminderDelay && (
