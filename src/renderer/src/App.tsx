@@ -2091,13 +2091,13 @@ export default function App() {
           const progress = timerTotal > 0 ? timerSeconds / timerTotal : 1;
           const offset = circ * (1 - progress);
           const done = timerSeconds === 0;
-          const ringColor = done ? "#34d399" : "#f97316";
-          const glowColor = done ? "rgba(52,211,153,0.5)" : "rgba(249,115,22,0.5)";
+          const ringColor = done ? "#34d399" : th.accent;
+          const glowColor = done ? "rgba(52,211,153,0.5)" : th.accent + "80";
           return (
-            <div style={{ padding:"14px 20px 16px", borderTop:"1px solid rgba(251,146,60,0.12)", background:"linear-gradient(180deg,rgba(249,115,22,0.05) 0%,transparent 100%)", display:"flex", flexDirection:"column" as const, gap:12 }}>
+            <div style={{ padding:"14px 20px 16px", borderTop:`1px solid ${th.accent}1f`, background:`linear-gradient(180deg,${th.accent}0d 0%,transparent 100%)`, display:"flex", flexDirection:"column" as const, gap:12 }}>
               {/* Header */}
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <span style={{ fontSize:10, fontWeight:700, color:"rgba(249,115,22,0.5)", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Timer</span>
+                <span style={{ fontSize:10, fontWeight:700, color:th.accent + "80", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Timer</span>
                 <button className="no-drag" onClick={() => setTimerOpen(false)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.2)", fontSize:13, padding:0, lineHeight:1 }}>✕</button>
               </div>
 
@@ -2107,8 +2107,8 @@ export default function App() {
                   <svg width="130" height="130" viewBox="0 0 130 130" style={{ transform:"rotate(-90deg)", position:"absolute" as const, inset:0 }}>
                     <defs>
                       <linearGradient id="timerArcGrad" x1="65" y1="13" x2="65" y2="117" gradientUnits="userSpaceOnUse">
-                        <stop offset="0%" stopColor="#fbbf24"/>
-                        <stop offset="100%" stopColor="#f97316"/>
+                        <stop offset="0%" stopColor={th.accentLight}/>
+                        <stop offset="100%" stopColor={th.accent}/>
                       </linearGradient>
                     </defs>
                     {/* Piste de fond */}
@@ -2127,7 +2127,7 @@ export default function App() {
                       <span style={{ fontSize:34, color:"#34d399", lineHeight:1 }}>✓</span>
                     ) : (
                       <>
-                        <span style={{ fontSize:26, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", letterSpacing:"0.05em", lineHeight:1 }}>
+                        <span style={{ fontSize:26, fontWeight:700, color:th.accentLight, fontFamily:"'Courier New',monospace", letterSpacing:"0.05em", lineHeight:1 }}>
                           {timerFmt(timerSeconds)}
                         </span>
                         <span style={{ fontSize:9, color:"rgba(255,255,255,0.22)", marginTop:5, letterSpacing:"0.1em", textTransform:"uppercase" as const }}>
@@ -2142,8 +2142,8 @@ export default function App() {
                 {!timerRunning && !done && (() => {
                   const mins = Math.floor(timerSeconds / 60);
                   const secs = timerSeconds % 60;
-                  const btnStyle = { width:26, height:20, borderRadius:5, background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.2)", color:"#fb923c", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" as const, userSelect:"none" as const };
-                  const digStyle = { fontSize:22, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", lineHeight:1, width:38, textAlign:"center" as const };
+                  const btnStyle = { width:26, height:20, borderRadius:5, background:th.accent + "1a", border:`1px solid ${th.accent}33`, color:th.accentLight, fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" as const, userSelect:"none" as const };
+                  const digStyle = { fontSize:22, fontWeight:700, color:th.accentLight, fontFamily:"'Courier New',monospace", lineHeight:1, width:38, textAlign:"center" as const };
                   const labelStyle = { fontSize:8, color:"rgba(255,255,255,0.2)", letterSpacing:"0.08em", marginTop:2 };
                   return (
                     <div style={{ display:"flex", alignItems:"flex-end", gap:4 }}>
@@ -2156,7 +2156,7 @@ export default function App() {
                           onClick={() => { const s=Math.max(secs||5,timerSeconds-60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(timerFmt(s)); }}>▼</button>
                         <span style={labelStyle}>min</span>
                       </div>
-                      <span style={{ fontSize:22, fontWeight:700, color:"rgba(251,146,60,0.6)", fontFamily:"'Courier New',monospace", marginBottom:16, lineHeight:1 }}>:</span>
+                      <span style={{ fontSize:22, fontWeight:700, color:th.accent + "99", fontFamily:"'Courier New',monospace", marginBottom:16, lineHeight:1 }}>:</span>
                       {/* Secondes */}
                       <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:3 }}>
                         <button className="no-drag" style={btnStyle}
@@ -2187,7 +2187,7 @@ export default function App() {
                         setTimerRunning(v => !v);
                       }
                     }}
-                    style={{ width:52, height:52, borderRadius:"50%", background:"linear-gradient(135deg,#f97316,#fb923c)", border:"none", boxShadow:`0 0 22px ${glowColor}, 0 2px 8px rgba(0,0,0,0.4)`, cursor:"pointer", color:"white", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center", transition:"box-shadow 0.2s" }}>
+                    style={{ width:52, height:52, borderRadius:"50%", background:`linear-gradient(135deg,${th.accent},${th.accentLight})`, border:"none", boxShadow:`0 0 22px ${glowColor}, 0 2px 8px rgba(0,0,0,0.4)`, cursor:"pointer", color:"white", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center", transition:"box-shadow 0.2s" }}>
                     {timerRunning ? "⏸" : "▶"}
                   </button>
                 </div>
@@ -2203,7 +2203,7 @@ export default function App() {
                   return (
                     <button key={p.label} className="no-drag"
                       onClick={() => { setTimerRunning(false); setTimerSeconds(p.s); setTimerTotal(p.s); setTimerLabel(p.label); }}
-                      style={{ fontSize:10, padding:"3px 10px", borderRadius:20, border: active ? "1px solid rgba(249,115,22,0.55)" : "1px solid rgba(255,255,255,0.07)", background: active ? "rgba(249,115,22,0.15)" : "rgba(255,255,255,0.03)", color: active ? "#fb923c" : "rgba(255,255,255,0.35)", cursor:"pointer", transition:"all 0.15s", fontWeight: active ? 600 : 400 }}>
+                      style={{ fontSize:10, padding:"3px 10px", borderRadius:20, border: active ? `1px solid ${th.accent}8c` : "1px solid rgba(255,255,255,0.07)", background: active ? th.accent + "26" : "rgba(255,255,255,0.03)", color: active ? th.accentLight : "rgba(255,255,255,0.35)", cursor:"pointer", transition:"all 0.15s", fontWeight: active ? 600 : 400 }}>
                       {p.label}
                     </button>
                   );
@@ -2219,9 +2219,9 @@ export default function App() {
             <span style={styles.footerHint}>{tr("footer_hint")}</span>
             {timerRunning && (
               <button className="no-drag" onClick={() => setTimerOpen(v => !v)}
-                style={{ display:"flex", alignItems:"center", gap:4, background:"rgba(251,146,60,0.12)", border:"1px solid rgba(251,146,60,0.3)", borderRadius:6, padding:"2px 8px", cursor:"pointer", animation:"pulse 2s ease-in-out infinite" }}>
+                style={{ display:"flex", alignItems:"center", gap:4, background:th.accent + "1f", border:`1px solid ${th.accent}4d`, borderRadius:6, padding:"2px 8px", cursor:"pointer", animation:"pulse 2s ease-in-out infinite" }}>
                 <span style={{ fontSize:10 }}>⏱</span>
-                <span style={{ fontSize:10, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace" }}>{timerFmt(timerSeconds)}</span>
+                <span style={{ fontSize:10, fontWeight:700, color:th.accentLight, fontFamily:"'Courier New',monospace" }}>{timerFmt(timerSeconds)}</span>
               </button>
             )}
           </div>
@@ -2249,7 +2249,7 @@ export default function App() {
             <button title="" className="no-drag ao-icon-btn"
               onMouseEnter={e => showTip(e, "Timer / Pomodoro")} onMouseLeave={hideTip}
               onClick={() => setTimerOpen(v => !v)}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? "1px solid rgba(251,146,60,0.45)" : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? "rgba(251,146,60,0.15)" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
               <span style={{ fontSize:13, lineHeight:1 }}>⏱</span>
             </button>
             {/* Mode compact */}
