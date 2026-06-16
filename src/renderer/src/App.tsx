@@ -2086,85 +2086,91 @@ export default function App() {
 
         {/* Panneau Timer */}
         {timerOpen && (() => {
-          const R = 44;
+          const R = 52;
           const circ = 2 * Math.PI * R;
           const progress = timerTotal > 0 ? timerSeconds / timerTotal : 1;
           const offset = circ * (1 - progress);
           const done = timerSeconds === 0;
           const ringColor = done ? "#34d399" : "#f97316";
+          const glowColor = done ? "rgba(52,211,153,0.5)" : "rgba(249,115,22,0.5)";
           return (
-            <div style={{ padding:"14px 20px 14px", borderTop:"1px solid rgba(251,146,60,0.12)", background:"linear-gradient(180deg,rgba(249,115,22,0.06) 0%,rgba(0,0,0,0) 100%)", display:"flex", flexDirection:"column" as const, gap:10 }}>
+            <div style={{ padding:"14px 20px 16px", borderTop:"1px solid rgba(251,146,60,0.12)", background:"linear-gradient(180deg,rgba(249,115,22,0.05) 0%,transparent 100%)", display:"flex", flexDirection:"column" as const, gap:12 }}>
               {/* Header */}
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <span style={{ fontSize:10, fontWeight:700, color:"rgba(249,115,22,0.45)", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Timer</span>
+                <span style={{ fontSize:10, fontWeight:700, color:"rgba(249,115,22,0.5)", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Timer</span>
                 <button className="no-drag" onClick={() => setTimerOpen(false)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.2)", fontSize:13, padding:0, lineHeight:1 }}>✕</button>
               </div>
 
-              {/* Zone centrale : arc + temps + contrôles */}
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
-
-                {/* Arc SVG */}
-                <svg width="110" height="110" viewBox="0 0 110 110" style={{ transform:"rotate(-90deg)", flexShrink:0 }}>
-                  <circle cx="55" cy="55" r={R} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8"/>
-                  <circle cx="55" cy="55" r={R} fill="none"
-                    stroke={ringColor} strokeWidth="8" strokeLinecap="round"
-                    strokeDasharray={circ} strokeDashoffset={offset}
-                    style={{ transition: timerRunning ? "stroke-dashoffset 1s linear" : "stroke-dashoffset 0.3s ease", filter:`drop-shadow(0 0 7px ${ringColor}99)` }}
-                  />
-                </svg>
-
-                {/* Temps + contrôles à droite */}
-                <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:10 }}>
-                  {/* Affichage / édition du temps */}
-                  {done ? (
-                    <div style={{ fontSize:30, color:"#34d399", lineHeight:1 }}>✓</div>
-                  ) : timerRunning ? (
-                    <div style={{ textAlign:"center" as const }}>
-                      <div style={{ fontSize:30, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", letterSpacing:"0.04em", lineHeight:1 }}>{timerFmt(timerSeconds)}</div>
-                      <div style={{ fontSize:9, color:"rgba(255,255,255,0.25)", marginTop:4 }}>{timerLabel}</div>
-                    </div>
-                  ) : (
-                    <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:4 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                        <button className="no-drag"
-                          onClick={() => { const s=Math.max(60,timerSeconds-60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
-                          style={{ width:30, height:30, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.25)", color:"#fb923c", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1, userSelect:"none" as const }}>
-                          −
-                        </button>
-                        <div style={{ textAlign:"center" as const, minWidth:72 }}>
-                          <div style={{ fontSize:28, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", letterSpacing:"0.04em", lineHeight:1 }}>{timerFmt(timerSeconds)}</div>
-                        </div>
-                        <button className="no-drag"
-                          onClick={() => { const s=Math.min(5999,timerSeconds+60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
-                          style={{ width:30, height:30, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.25)", color:"#fb923c", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1, userSelect:"none" as const }}>
-                          +
-                        </button>
-                      </div>
-                      <span style={{ fontSize:9, color:"rgba(255,255,255,0.2)", letterSpacing:"0.08em" }}>− / + 1 minute</span>
-                    </div>
-                  )}
-
-                  {/* Boutons Start / Reset */}
-                  <div style={{ display:"flex", flexDirection:"row" as const, alignItems:"center", gap:8 }}>
-                    <button className="no-drag"
-                      onClick={() => { setTimerRunning(false); setTimerSeconds(timerTotal > 0 ? timerTotal : 25*60); }}
-                      style={{ width:32, height:32, borderRadius:"50%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      ↺
-                    </button>
-                    <button className="no-drag"
-                      onClick={() => {
-                        if (done) {
-                          setTimerSeconds(timerTotal);
-                          setTimeout(() => setTimerRunning(true), 0);
-                        } else {
-                          if (!timerRunning) setTimerTotal(timerSeconds);
-                          setTimerRunning(v => !v);
-                        }
-                      }}
-                      style={{ width:46, height:46, borderRadius:"50%", background:"linear-gradient(135deg,#f97316,#fb923c)", border:"none", boxShadow:"0 0 18px rgba(249,115,22,0.4)", cursor:"pointer", color:"white", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      {timerRunning ? "⏸" : "▶"}
-                    </button>
+              {/* Cercle centré avec temps à l'intérieur */}
+              <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:14 }}>
+                <div style={{ position:"relative" as const, width:130, height:130 }}>
+                  <svg width="130" height="130" viewBox="0 0 130 130" style={{ transform:"rotate(-90deg)", position:"absolute" as const, inset:0 }}>
+                    <defs>
+                      <linearGradient id="timerArcGrad" x1="65" y1="13" x2="65" y2="117" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor="#fbbf24"/>
+                        <stop offset="100%" stopColor="#f97316"/>
+                      </linearGradient>
+                    </defs>
+                    {/* Piste de fond */}
+                    <circle cx="65" cy="65" r={R} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="11"/>
+                    {/* Arc de progression */}
+                    <circle cx="65" cy="65" r={R} fill="none"
+                      stroke={done ? "#34d399" : "url(#timerArcGrad)"}
+                      strokeWidth="11" strokeLinecap="round"
+                      strokeDasharray={circ} strokeDashoffset={offset}
+                      style={{ transition: timerRunning ? "stroke-dashoffset 1s linear" : "stroke-dashoffset 0.3s ease", filter:`drop-shadow(0 0 10px ${glowColor})` }}
+                    />
+                  </svg>
+                  {/* Temps centré à l'intérieur */}
+                  <div style={{ position:"absolute" as const, inset:0, display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+                    {done ? (
+                      <span style={{ fontSize:34, color:"#34d399", lineHeight:1 }}>✓</span>
+                    ) : (
+                      <>
+                        <span style={{ fontSize:26, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", letterSpacing:"0.05em", lineHeight:1 }}>
+                          {timerFmt(timerSeconds)}
+                        </span>
+                        <span style={{ fontSize:9, color:"rgba(255,255,255,0.22)", marginTop:5, letterSpacing:"0.1em", textTransform:"uppercase" as const }}>
+                          {timerLabel}
+                        </span>
+                      </>
+                    )}
                   </div>
+                </div>
+
+                {/* +/− durée (seulement à l'arrêt) */}
+                {!timerRunning && !done && (
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <button className="no-drag"
+                      onClick={() => { const s=Math.max(60,timerSeconds-60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
+                      style={{ width:28, height:28, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.2)", color:"#fb923c", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", userSelect:"none" as const }}>−</button>
+                    <span style={{ fontSize:9, color:"rgba(255,255,255,0.18)", letterSpacing:"0.08em" }}>1 min</span>
+                    <button className="no-drag"
+                      onClick={() => { const s=Math.min(5999,timerSeconds+60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
+                      style={{ width:28, height:28, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.2)", color:"#fb923c", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", userSelect:"none" as const }}>+</button>
+                  </div>
+                )}
+
+                {/* Reset + Play/Pause */}
+                <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                  <button className="no-drag"
+                    onClick={() => { setTimerRunning(false); setTimerSeconds(timerTotal > 0 ? timerTotal : 25*60); }}
+                    style={{ width:34, height:34, borderRadius:"50%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:15, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    ↺
+                  </button>
+                  <button className="no-drag"
+                    onClick={() => {
+                      if (done) {
+                        setTimerSeconds(timerTotal);
+                        setTimeout(() => setTimerRunning(true), 0);
+                      } else {
+                        if (!timerRunning) setTimerTotal(timerSeconds);
+                        setTimerRunning(v => !v);
+                      }
+                    }}
+                    style={{ width:52, height:52, borderRadius:"50%", background:"linear-gradient(135deg,#f97316,#fb923c)", border:"none", boxShadow:`0 0 22px ${glowColor}, 0 2px 8px rgba(0,0,0,0.4)`, cursor:"pointer", color:"white", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center", transition:"box-shadow 0.2s" }}>
+                    {timerRunning ? "⏸" : "▶"}
+                  </button>
                 </div>
               </div>
 
