@@ -108,6 +108,8 @@ export default function App() {
   const [fileLoading, setFileLoading] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+  const [autoSpeak, setAutoSpeak] = useState<boolean>(() => localStorage.getItem("omnyx_autospeak") === "1");
+  const lastAutoSpokenRef = useRef<string>("");
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -867,6 +869,42 @@ export default function App() {
     setSpeakingIdx(idx);
     window.speechSynthesis.speak(utter);
   };
+
+  // Auto-speak : nouvelle réponse IA complète
+  useEffect(() => {
+    if (!autoSpeak || loading) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant" || !last.content) return;
+    const key = last.content.slice(0, 80);
+    if (key === lastAutoSpokenRef.current) return;
+    lastAutoSpokenRef.current = key;
+    const idx = messages.length - 1;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(stripMarkdown(last.content));
+    utter.lang = "fr-FR"; utter.rate = 1.05;
+    utter.onend = () => setSpeakingIdx(null);
+    utter.onerror = () => setSpeakingIdx(null);
+    setSpeakingIdx(idx);
+    window.speechSynthesis.speak(utter);
+  }, [messages, loading, autoSpeak]);
+
+  // Auto-speak : action tâche
+  useEffect(() => {
+    if (!autoSpeak || !pendingTask) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(`Nouvelle tâche créée : ${pendingTask.title}`);
+    u.lang = "fr-FR"; u.rate = 1.05;
+    window.speechSynthesis.speak(u);
+  }, [pendingTask, autoSpeak]);
+
+  // Auto-speak : action événement
+  useEffect(() => {
+    if (!autoSpeak || !pendingEvent) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(`Événement programmé : ${pendingEvent.title}`);
+    u.lang = "fr-FR"; u.rate = 1.05;
+    window.speechSynthesis.speak(u);
+  }, [pendingEvent, autoSpeak]);
 
 
   if (view === "login") {
@@ -2277,6 +2315,18 @@ export default function App() {
               onClick={() => setTimerOpen(v => !v)}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
               <span style={{ fontSize:13, lineHeight:1 }}>⏱</span>
+            </button>
+            {/* Lecture automatique */}
+            <button title="" className="no-drag ao-icon-btn"
+              onMouseEnter={e => showTip(e, autoSpeak ? "Désactiver la lecture auto" : "Activer la lecture auto")} onMouseLeave={hideTip}
+              onClick={() => {
+                const next = !autoSpeak;
+                setAutoSpeak(next);
+                localStorage.setItem("omnyx_autospeak", next ? "1" : "0");
+                if (!next) { window.speechSynthesis.cancel(); setSpeakingIdx(null); }
+              }}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: autoSpeak ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: autoSpeak ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
+              <span style={{ fontSize:13, lineHeight:1 }}>{autoSpeak ? "🔊" : "🔇"}</span>
             </button>
             {/* Mode compact */}
             <button title="" className="no-drag ao-icon-btn"
