@@ -111,7 +111,6 @@ export default function App() {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const showTip = (e: React.MouseEvent, text: string) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTooltip({ text, x: r.left + r.width / 2, y: r.bottom + 6 }); };
   const hideTip = () => setTooltip(null);
-  const [detectedText, setDetectedText] = useState<string | null>(null);
   const [autoDetectMode, setAutoDetectMode] = useState(false);
   const [writeForMeMode, setWriteForMeMode] = useState(false);
   const [writeForMePrompt, setWriteForMePrompt] = useState("");
@@ -319,12 +318,6 @@ export default function App() {
       setPendingClipboardImage(base64);
     });
 
-    // Détection texte sélectionné
-    // @ts-ignore
-    window.api?.onTextSelected?.((text: string) => {
-      setDetectedText(text);
-      setWriteForMeMode(false);
-    });
   }, []);
 
 
@@ -1092,7 +1085,6 @@ export default function App() {
                 setAutoDetectMode(next);
                 // @ts-ignore
                 window.api?.setAutoDetectText(next);
-                if (!next) setDetectedText(null);
               }}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: autoDetectMode ? "rgba(16,185,129,0.25)" : "transparent" }}>
               <MousePointer2 size={14} color={autoDetectMode ? "#6ee7b7" : "#34d399"} />
@@ -1100,7 +1092,7 @@ export default function App() {
             {/* PenLine — Écris pour moi */}
             <button className="no-drag ao-icon-btn" title=""
               onMouseEnter={e => showTip(e, "Écris pour moi")} onMouseLeave={hideTip}
-              onClick={() => { setWriteForMeMode(v => !v); setDetectedText(null); setPasteMode(false); setQuickMemoryMode(false); }}
+              onClick={() => { setWriteForMeMode(v => !v); setPasteMode(false); setQuickMemoryMode(false); }}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border:"none", background: writeForMeMode ? "rgba(251,146,60,0.2)" : "transparent" }}>
               <PenLine size={14} color={writeForMeMode ? "#fdba74" : "#fb923c"} />
             </button>
@@ -1767,50 +1759,6 @@ export default function App() {
                   }}
                   style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:8, color:"#a5b4fc", fontSize:11, cursor:"pointer", padding:"5px 12px" }}>
                   {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Panneau texte détecté — actions contextuelles */}
-        {detectedText && (
-          <div style={{ padding:"10px 16px", borderTop:"1px solid rgba(16,185,129,0.2)", background:"rgba(16,185,129,0.05)" }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <MousePointer2 size={11} color="#6ee7b7" />
-                <span style={{ fontSize:10, fontWeight:700, color:"rgba(110,231,183,0.8)", textTransform:"uppercase" as const, letterSpacing:"0.08em" }}>Texte détecté</span>
-              </div>
-              <button className="no-drag" onClick={() => setDetectedText(null)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:12, padding:"0 2px" }}>✕</button>
-            </div>
-            <p style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginBottom:8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const, maxWidth:"100%" }}>
-              "{detectedText.slice(0, 80)}{detectedText.length > 80 ? "…" : ""}"
-            </p>
-            <div style={{ display:"flex", flexWrap:"wrap" as const, gap:5 }}>
-              {[
-                { label:"Traduire en anglais", prompt:`Traduis ce texte en anglais :\n\n"${detectedText}"` },
-                { label:"Expliquer", prompt:`Explique ce texte simplement :\n\n"${detectedText}"` },
-                { label:"Améliorer", prompt:`Améliore la qualité de ce texte (grammaire, style, clarté) :\n\n"${detectedText}"` },
-                { label:"Résumer", prompt:`Résume ce texte en 2-3 phrases :\n\n"${detectedText}"` },
-              ].map(action => (
-                <button key={action.label} className="no-drag"
-                  onClick={async () => {
-                    const text = detectedText;
-                    setDetectedText(null);
-                    setMessages(prev => [...prev, { role:"user" as const, content: action.label, ts: now() }]);
-                    setLoading(true);
-                    setMessages(prev => [...prev, { role:"assistant" as const, content:"", ts: now() }]);
-                    let full = "";
-                    try {
-                      for await (const ev of sendMessageStream(action.prompt, "executive", activeConversationId)) {
-                        if (ev.type === "start" && ev.conversation_id) setActiveConversationId(ev.conversation_id);
-                        else if (ev.type === "delta") { full += ev.content; setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:full}; return m; }); }
-                        else if (ev.type === "done" && ev.clean_content) { setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:ev.clean_content}; return m; }); }
-                      }
-                    } catch {} finally { setLoading(false); }
-                  }}
-                  style={{ background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.3)", borderRadius:7, color:"#6ee7b7", fontSize:11, cursor:"pointer", padding:"4px 10px" }}>
-                  {action.label}
                 </button>
               ))}
             </div>

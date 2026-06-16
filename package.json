@@ -1,6 +1,6 @@
 {
   "name": "omnyx-desktop",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "description": "Omnyx Desktop AI Companion",
   "main": "out/main/index.js",
   "scripts": {
