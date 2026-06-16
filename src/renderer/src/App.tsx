@@ -910,7 +910,11 @@ export default function App() {
           if (voiceOpenRef.current) setTimeout(startVoiceListening, 1200);
         }
       } catch (e: any) {
-        const msg = e?.response?.data?.detail || e?.message || "Erreur transcription";
+        const status = e?.response?.status;
+        const detail = e?.response?.data?.detail || e?.response?.data;
+        const msg = status
+          ? `HTTP ${status}${detail ? " — " + JSON.stringify(detail).slice(0, 80) : ""}`
+          : (e?.message || "Erreur réseau");
         setVoiceError(msg);
         if (voiceOpenRef.current) setTimeout(startVoiceListening, 1500);
       }
