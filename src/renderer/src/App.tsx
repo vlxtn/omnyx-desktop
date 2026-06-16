@@ -2138,18 +2138,37 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* +/− durée (seulement à l'arrêt) */}
-                {!timerRunning && !done && (
-                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <button className="no-drag"
-                      onClick={() => { const s=Math.max(60,timerSeconds-60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
-                      style={{ width:28, height:28, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.2)", color:"#fb923c", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", userSelect:"none" as const }}>−</button>
-                    <span style={{ fontSize:9, color:"rgba(255,255,255,0.18)", letterSpacing:"0.08em" }}>1 min</span>
-                    <button className="no-drag"
-                      onClick={() => { const s=Math.min(5999,timerSeconds+60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(`${Math.floor(s/60)}min`); }}
-                      style={{ width:28, height:28, borderRadius:"50%", background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.2)", color:"#fb923c", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", userSelect:"none" as const }}>+</button>
-                  </div>
-                )}
+                {/* Sélecteur min : sec (seulement à l'arrêt) */}
+                {!timerRunning && !done && (() => {
+                  const mins = Math.floor(timerSeconds / 60);
+                  const secs = timerSeconds % 60;
+                  const btnStyle = { width:26, height:20, borderRadius:5, background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.2)", color:"#fb923c", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" as const, userSelect:"none" as const };
+                  const digStyle = { fontSize:22, fontWeight:700, color:"#fb923c", fontFamily:"'Courier New',monospace", lineHeight:1, width:38, textAlign:"center" as const };
+                  const labelStyle = { fontSize:8, color:"rgba(255,255,255,0.2)", letterSpacing:"0.08em", marginTop:2 };
+                  return (
+                    <div style={{ display:"flex", alignItems:"flex-end", gap:4 }}>
+                      {/* Minutes */}
+                      <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:3 }}>
+                        <button className="no-drag" style={btnStyle}
+                          onClick={() => { const s=Math.min(5999,timerSeconds+60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(timerFmt(s)); }}>▲</button>
+                        <span style={digStyle}>{String(mins).padStart(2,"0")}</span>
+                        <button className="no-drag" style={btnStyle}
+                          onClick={() => { const s=Math.max(secs||5,timerSeconds-60); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(timerFmt(s)); }}>▼</button>
+                        <span style={labelStyle}>min</span>
+                      </div>
+                      <span style={{ fontSize:22, fontWeight:700, color:"rgba(251,146,60,0.6)", fontFamily:"'Courier New',monospace", marginBottom:16, lineHeight:1 }}>:</span>
+                      {/* Secondes */}
+                      <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:3 }}>
+                        <button className="no-drag" style={btnStyle}
+                          onClick={() => { const s=Math.min(5999,timerSeconds+5); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(timerFmt(s)); }}>▲</button>
+                        <span style={digStyle}>{String(secs).padStart(2,"0")}</span>
+                        <button className="no-drag" style={btnStyle}
+                          onClick={() => { const s=Math.max(mins>0?0:5,timerSeconds-5); setTimerSeconds(s); setTimerTotal(s); setTimerLabel(timerFmt(s)); }}>▼</button>
+                        <span style={labelStyle}>sec</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Reset + Play/Pause */}
                 <div style={{ display:"flex", alignItems:"center", gap:12 }}>
