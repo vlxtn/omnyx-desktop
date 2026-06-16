@@ -873,8 +873,8 @@ export default function App() {
       heard = Array.from(e.results as any[]).map((r: any) => r[0].transcript).join("");
       setVoiceTranscript(heard);
     };
-    recog.onend = () => { if (heard.trim()) sendVoiceMessage(heard); else setVoicePhase("idle"); };
-    recog.onerror = () => setVoicePhase("idle");
+    recog.onend = () => { if (heard.trim()) sendVoiceMessage(heard); else if (voiceOpenRef.current) setTimeout(startVoiceListening, 200); };
+    recog.onerror = () => { if (voiceOpenRef.current) setTimeout(startVoiceListening, 400); };
     recognitionRef.current = recog;
     setVoiceTranscript("");
     setVoicePhase("listening");
@@ -977,7 +977,7 @@ export default function App() {
 
         {/* ── Overlay discussion vocale ── */}
         {voiceOpen && (
-          <div style={{ position:"absolute", inset:0, zIndex:200, background:"rgba(8,8,18,0.97)", backdropFilter:"blur(16px)", display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center", gap:22, borderRadius:"inherit" }}>
+          <div className="no-drag" style={{ position:"absolute", inset:0, zIndex:200, background:"rgba(8,8,18,0.97)", backdropFilter:"blur(16px)", display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center", gap:22, borderRadius:"inherit" }}>
             {/* Fermer */}
             <button onClick={closeVoice} className="no-drag" style={{ position:"absolute" as const, top:14, right:14, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, width:28, height:28, cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
             {/* Titre */}
@@ -1007,7 +1007,7 @@ export default function App() {
             </div>
             {/* Label de phase */}
             <span style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.38)", letterSpacing:"0.14em", textTransform:"uppercase" as const }}>
-              {voicePhase==="idle" ? "Appuyez pour parler" : voicePhase==="listening" ? "En écoute..." : voicePhase==="thinking" ? "Traitement..." : "Réponse en cours..."}
+              {voicePhase==="listening" ? "En écoute..." : voicePhase==="thinking" ? "Traitement..." : "Réponse en cours..."}
             </span>
             {/* Transcription */}
             {voiceTranscript && (
@@ -1020,13 +1020,6 @@ export default function App() {
               <div style={{ maxWidth:"88%", textAlign:"center" as const, fontSize:12, color:"rgba(185,195,255,0.82)", lineHeight:1.65, maxHeight:90, overflow:"hidden" as const }}>
                 {voiceResponse.length > 230 ? voiceResponse.slice(0,230)+"…" : voiceResponse}
               </div>
-            )}
-            {/* Bouton micro manuel si idle */}
-            {voicePhase === "idle" && (
-              <button className="no-drag" onClick={startVoiceListening}
-                style={{ width:66, height:66, borderRadius:"50%", background:`linear-gradient(135deg,${th.accent},${th.accentLight})`, border:"none", cursor:"pointer", fontSize:26, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 0 28px ${th.accent}55`, transition:"transform 0.15s" }}>
-                🎤
-              </button>
             )}
           </div>
         )}
