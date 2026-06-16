@@ -113,6 +113,8 @@ export default function App() {
   const [voiceResponse, setVoiceResponse] = useState("");
   const recognitionRef = useRef<any>(null);
   const voiceOpenRef = useRef(false);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -875,6 +877,7 @@ export default function App() {
     analyser.fftSize = 512;
     const src = audioCtx.createMediaStreamSource(stream);
     src.connect(analyser);
+    analyserRef.current = analyser;
     const freqData = new Uint8Array(analyser.frequencyBinCount);
 
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -980,10 +983,53 @@ export default function App() {
     setVoiceOpen(false);
     window.speechSynthesis.cancel();
     try { recognitionRef.current?.stop?.(); } catch {}
+    analyserRef.current = null;
     setVoicePhase("idle");
     setVoiceTranscript("");
     setVoiceResponse("");
   };
+
+  // Visualiseur audio — barres de fréquences sur canvas
+  useEffect(() => {
+    if (voicePhase !== "listening") return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let animId: number;
+    const accent = th.accent;
+    const accentLight = th.accentLight;
+    const W = canvas.width;
+    const H = canvas.height;
+    const NUM_BARS = 48;
+
+    const draw = () => {
+      animId = requestAnimationFrame(draw);
+      const analyser = analyserRef.current;
+      ctx.clearRect(0, 0, W, H);
+      if (!analyser) return;
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(buf);
+      const step = Math.floor(buf.length / NUM_BARS);
+      const barW = (W / NUM_BARS) * 0.65;
+      const gap = W / NUM_BARS - barW;
+      for (let i = 0; i < NUM_BARS; i++) {
+        const val = buf[i * step] / 255;
+        const barH = Math.max(3, val * H);
+        const x = i * (barW + gap) + gap / 2;
+        const y = (H - barH) / 2;
+        const grad = ctx.createLinearGradient(0, y, 0, y + barH);
+        grad.addColorStop(0, accentLight);
+        grad.addColorStop(1, accent);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        (ctx as any).roundRect?.(x, y, barW, barH, 2) ?? ctx.rect(x, y, barW, barH);
+        ctx.fill();
+      }
+    };
+    draw();
+    return () => cancelAnimationFrame(animId);
+  }, [voicePhase, th.accent, th.accentLight]);
 
 
   if (view === "login") {
@@ -2459,6 +2505,10 @@ export default function App() {
             <span style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.38)", letterSpacing:"0.14em", textTransform:"uppercase" as const }}>
               {voicePhase==="listening"?"En écoute...":voicePhase==="thinking"?"Traitement...":"Réponse en cours..."}
             </span>
+            {/* Visualiseur audio */}
+            <canvas ref={canvasRef} width={300} height={56}
+              style={{ borderRadius:8, opacity: voicePhase==="listening" ? 1 : 0, transition:"opacity 0.3s", filter:`drop-shadow(0 0 6px ${th.accent}60)` }}/>
+
             {voiceTranscript && <div style={{ maxWidth:"82%", textAlign:"center" as const, fontSize:13, color:"rgba(255,255,255,0.62)", fontStyle:"italic", lineHeight:1.55 }}>« {voiceTranscript} »</div>}
             {voiceResponse && <div style={{ maxWidth:"88%", textAlign:"center" as const, fontSize:12, color:"rgba(185,195,255,0.82)", lineHeight:1.65, maxHeight:90, overflow:"hidden" as const }}>{voiceResponse.length>230?voiceResponse.slice(0,230)+"…":voiceResponse}</div>}
           </div>
