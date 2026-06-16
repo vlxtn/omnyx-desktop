@@ -111,6 +111,7 @@ export default function App() {
   const [voicePhase, setVoicePhase] = useState<"idle"|"listening"|"thinking"|"speaking">("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceResponse, setVoiceResponse] = useState("");
+  const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
   const voiceOpenRef = useRef(false);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -869,6 +870,7 @@ export default function App() {
     catch { if (voiceOpenRef.current) setTimeout(startVoiceListening, 600); return; }
 
     setVoiceTranscript("");
+    setVoiceError("");
     setVoicePhase("listening");
 
     // Détection de silence via AnalyserNode
@@ -892,21 +894,25 @@ export default function App() {
       audioCtx.close();
       stream.getTracks().forEach(t => t.stop());
       const blob = new Blob(chunks, { type: mimeType });
-      if (blob.size < 800) {
+      if (blob.size < 500) {
         if (voiceOpenRef.current) setTimeout(startVoiceListening, 200);
         return;
       }
       setVoicePhase("thinking");
+      setVoiceError("");
       try {
         const transcript = await transcribeAudio(blob);
         if (transcript.trim()) {
           setVoiceTranscript(transcript);
           await sendVoiceMessage(transcript);
         } else {
-          if (voiceOpenRef.current) startVoiceListening();
+          setVoiceError("Rien compris — réessaie");
+          if (voiceOpenRef.current) setTimeout(startVoiceListening, 1200);
         }
-      } catch {
-        if (voiceOpenRef.current) setTimeout(startVoiceListening, 600);
+      } catch (e: any) {
+        const msg = e?.response?.data?.detail || e?.message || "Erreur transcription";
+        setVoiceError(msg);
+        if (voiceOpenRef.current) setTimeout(startVoiceListening, 1500);
       }
     };
 
@@ -968,7 +974,12 @@ export default function App() {
           await executeAction(action);
         }
       }
-    } catch {}
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || "Erreur réseau";
+      setVoiceError(msg);
+      if (voiceOpenRef.current) setTimeout(startVoiceListening, 1500);
+      return;
+    }
     setVoicePhase("speaking");
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(stripMarkdown(fullContent || "Désolé, je n'ai pas compris."));
@@ -987,6 +998,7 @@ export default function App() {
     setVoicePhase("idle");
     setVoiceTranscript("");
     setVoiceResponse("");
+    setVoiceError("");
   };
 
   // Visualiseur audio — barres de fréquences sur canvas
@@ -2510,6 +2522,7 @@ export default function App() {
               style={{ borderRadius:8, opacity: voicePhase==="listening" ? 1 : 0, transition:"opacity 0.3s", filter:`drop-shadow(0 0 6px ${th.accent}60)` }}/>
 
             {voiceTranscript && <div style={{ maxWidth:"82%", textAlign:"center" as const, fontSize:13, color:"rgba(255,255,255,0.62)", fontStyle:"italic", lineHeight:1.55 }}>« {voiceTranscript} »</div>}
+            {voiceError && <div style={{ maxWidth:"82%", textAlign:"center" as const, fontSize:11, color:"#f87171", background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.25)", borderRadius:6, padding:"4px 12px" }}>{voiceError}</div>}
             {voiceResponse && <div style={{ maxWidth:"88%", textAlign:"center" as const, fontSize:12, color:"rgba(185,195,255,0.82)", lineHeight:1.65, maxHeight:90, overflow:"hidden" as const }}>{voiceResponse.length>230?voiceResponse.slice(0,230)+"…":voiceResponse}</div>}
           </div>
         )}
