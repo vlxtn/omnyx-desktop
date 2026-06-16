@@ -861,9 +861,10 @@ export default function App() {
     .replace(/`{1,3}[\s\S]*?`{1,3}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/^[-*+]\s/gm, "").replace(/^>\s?/gm, "").replace(/---+/g, "").trim();
 
-  const startVoiceListening = () => {
+  const startVoiceListening = async () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
+    try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { return; }
     const recog = new SR();
     recog.lang = "fr-FR";
     recog.continuous = false;
@@ -974,55 +975,6 @@ export default function App() {
         ...(isVertical ? { width: 380, maxHeight: 680, minHeight: 300 } : { width: 660, maxHeight: 500 }),
         ...(compactMode ? { borderRadius: 8, minHeight: 0 } : {}),
       }} className="ao-window">
-
-        {/* ── Overlay discussion vocale ── */}
-        {voiceOpen && (
-          <div className="no-drag" style={{ position:"absolute", inset:0, zIndex:200, background:"rgba(8,8,18,0.97)", backdropFilter:"blur(16px)", display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center", gap:22, borderRadius:"inherit" }}>
-            {/* Fermer */}
-            <button onClick={closeVoice} className="no-drag" style={{ position:"absolute" as const, top:14, right:14, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, width:28, height:28, cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
-            {/* Titre */}
-            <span style={{ position:"absolute" as const, top:18, left:20, fontSize:10, fontWeight:700, color:th.accent + "80", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Discussion vocale</span>
-            {/* Cercle animé */}
-            <div style={{ position:"relative" as const, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              {voicePhase === "listening" && (<>
-                <div style={{ position:"absolute" as const, width:188, height:188, borderRadius:"50%", border:`2px solid ${th.accent}33`, animation:"voicePulse 1.8s ease-out infinite" }}/>
-                <div style={{ position:"absolute" as const, width:160, height:160, borderRadius:"50%", border:`2px solid ${th.accent}55`, animation:"voicePulse 1.8s ease-out infinite 0.65s" }}/>
-              </>)}
-              {voicePhase === "speaking" && (<>
-                <div style={{ position:"absolute" as const, width:188, height:188, borderRadius:"50%", border:"2px solid rgba(52,211,153,0.28)", animation:"voicePulse 1.4s ease-out infinite" }}/>
-                <div style={{ position:"absolute" as const, width:160, height:160, borderRadius:"50%", border:"2px solid rgba(52,211,153,0.48)", animation:"voicePulse 1.4s ease-out infinite 0.45s" }}/>
-              </>)}
-              <div style={{
-                width:124, height:124, borderRadius:"50%",
-                background: voicePhase==="listening" ? `radial-gradient(circle, ${th.accent}2e 0%, ${th.accent}08 100%)` : voicePhase==="speaking" ? "radial-gradient(circle, rgba(52,211,153,0.18) 0%, rgba(52,211,153,0.03) 100%)" : "rgba(255,255,255,0.04)",
-                border: `3px solid ${voicePhase==="listening" ? th.accent : voicePhase==="speaking" ? "#34d399" : voicePhase==="thinking" ? th.accent+"80" : "rgba(255,255,255,0.13)"}`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                boxShadow: voicePhase==="listening" ? `0 0 44px ${th.accent}40` : voicePhase==="speaking" ? "0 0 44px rgba(52,211,153,0.35)" : "none",
-                transition:"all 0.4s ease"
-              }}>
-                <span style={{ fontSize:48, lineHeight:1 }}>
-                  {voicePhase==="idle" ? "🎤" : voicePhase==="listening" ? "🎙️" : voicePhase==="thinking" ? "⚡" : "🔊"}
-                </span>
-              </div>
-            </div>
-            {/* Label de phase */}
-            <span style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.38)", letterSpacing:"0.14em", textTransform:"uppercase" as const }}>
-              {voicePhase==="listening" ? "En écoute..." : voicePhase==="thinking" ? "Traitement..." : "Réponse en cours..."}
-            </span>
-            {/* Transcription */}
-            {voiceTranscript && (
-              <div style={{ maxWidth:"82%", textAlign:"center" as const, fontSize:13, color:"rgba(255,255,255,0.62)", fontStyle:"italic", lineHeight:1.55, padding:"0 10px" }}>
-                « {voiceTranscript} »
-              </div>
-            )}
-            {/* Réponse IA (streaming) */}
-            {voiceResponse && (
-              <div style={{ maxWidth:"88%", textAlign:"center" as const, fontSize:12, color:"rgba(185,195,255,0.82)", lineHeight:1.65, maxHeight:90, overflow:"hidden" as const }}>
-                {voiceResponse.length > 230 ? voiceResponse.slice(0,230)+"…" : voiceResponse}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* En-tête — zone de déplacement */}
         <div style={{
@@ -2431,6 +2383,32 @@ export default function App() {
             )}
           </div>
         </div>}
+
+        {/* ── Overlay discussion vocale — placé EN DERNIER pour passer au-dessus du drag region ── */}
+        {voiceOpen && (
+          <div className="no-drag" style={{ position:"absolute", inset:0, zIndex:500, background:"rgba(8,8,18,0.97)", backdropFilter:"blur(16px)", display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center", gap:22, borderRadius:"inherit" }}>
+            <button onClick={closeVoice} className="no-drag" style={{ position:"absolute" as const, top:14, right:14, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, width:28, height:28, cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+            <span style={{ position:"absolute" as const, top:18, left:20, fontSize:10, fontWeight:700, color:th.accent + "80", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Discussion vocale</span>
+            <div style={{ position:"relative" as const, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              {voicePhase === "listening" && (<>
+                <div style={{ position:"absolute" as const, width:188, height:188, borderRadius:"50%", border:`2px solid ${th.accent}33`, animation:"voicePulse 1.8s ease-out infinite" }}/>
+                <div style={{ position:"absolute" as const, width:160, height:160, borderRadius:"50%", border:`2px solid ${th.accent}55`, animation:"voicePulse 1.8s ease-out infinite 0.65s" }}/>
+              </>)}
+              {voicePhase === "speaking" && (<>
+                <div style={{ position:"absolute" as const, width:188, height:188, borderRadius:"50%", border:"2px solid rgba(52,211,153,0.28)", animation:"voicePulse 1.4s ease-out infinite" }}/>
+                <div style={{ position:"absolute" as const, width:160, height:160, borderRadius:"50%", border:"2px solid rgba(52,211,153,0.48)", animation:"voicePulse 1.4s ease-out infinite 0.45s" }}/>
+              </>)}
+              <div style={{ width:124, height:124, borderRadius:"50%", background: voicePhase==="listening" ? `radial-gradient(circle,${th.accent}2e 0%,${th.accent}08 100%)` : voicePhase==="speaking" ? "radial-gradient(circle,rgba(52,211,153,0.18) 0%,rgba(52,211,153,0.03) 100%)" : "rgba(255,255,255,0.04)", border:`3px solid ${voicePhase==="listening"?th.accent:voicePhase==="speaking"?"#34d399":voicePhase==="thinking"?th.accent+"80":"rgba(255,255,255,0.13)"}`, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:voicePhase==="listening"?`0 0 44px ${th.accent}40`:voicePhase==="speaking"?"0 0 44px rgba(52,211,153,0.35)":"none", transition:"all 0.4s ease" }}>
+                <span style={{ fontSize:48, lineHeight:1 }}>{voicePhase==="listening"?"🎙️":voicePhase==="thinking"?"⚡":"🔊"}</span>
+              </div>
+            </div>
+            <span style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.38)", letterSpacing:"0.14em", textTransform:"uppercase" as const }}>
+              {voicePhase==="listening"?"En écoute...":voicePhase==="thinking"?"Traitement...":"Réponse en cours..."}
+            </span>
+            {voiceTranscript && <div style={{ maxWidth:"82%", textAlign:"center" as const, fontSize:13, color:"rgba(255,255,255,0.62)", fontStyle:"italic", lineHeight:1.55 }}>« {voiceTranscript} »</div>}
+            {voiceResponse && <div style={{ maxWidth:"88%", textAlign:"center" as const, fontSize:12, color:"rgba(185,195,255,0.82)", lineHeight:1.65, maxHeight:90, overflow:"hidden" as const }}>{voiceResponse.length>230?voiceResponse.slice(0,230)+"…":voiceResponse}</div>}
+          </div>
+        )}
       </div>
     </div>
   );
