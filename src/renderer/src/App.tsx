@@ -864,7 +864,10 @@ export default function App() {
   const startVoiceListening = async () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
-    try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop()); // libère le micro pour SpeechRecognition
+    } catch { return; }
     const recog = new SR();
     recog.lang = "fr-FR";
     recog.continuous = false;
