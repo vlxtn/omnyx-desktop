@@ -154,6 +154,14 @@
         from { transform: scale(0); opacity: 0.5; }
         to   { transform: scale(2.8); opacity: 0; }
       }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 0.7; }
+        50%       { transform: scale(1.08); opacity: 1; }
+      }
+      @keyframes voicePulse {
+        0%   { transform: scale(1); opacity: 0.65; }
+        100% { transform: scale(1.55); opacity: 0; }
+      }
 
       /* Send button */
       .ao-send-btn {

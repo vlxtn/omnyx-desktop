@@ -107,9 +107,12 @@ export default function App() {
   const [attachedFile, setAttachedFile] = useState<{ name: string; type: "image" | "text"; content?: string; base64?: string; mime_type?: string } | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
-  const [autoSpeak, setAutoSpeak] = useState<boolean>(() => localStorage.getItem("omnyx_autospeak") === "1");
-  const lastAutoSpokenRef = useRef<string>("");
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voicePhase, setVoicePhase] = useState<"idle"|"listening"|"thinking"|"speaking">("idle");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceResponse, setVoiceResponse] = useState("");
+  const recognitionRef = useRef<any>(null);
+  const voiceOpenRef = useRef(false);
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -858,53 +861,74 @@ export default function App() {
     .replace(/`{1,3}[\s\S]*?`{1,3}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/^[-*+]\s/gm, "").replace(/^>\s?/gm, "").replace(/---+/g, "").trim();
 
-  const speakMessage = (text: string, idx: number) => {
+  const startVoiceListening = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    const recog = new SR();
+    recog.lang = "fr-FR";
+    recog.continuous = false;
+    recog.interimResults = true;
+    let heard = "";
+    recog.onresult = (e: any) => {
+      heard = Array.from(e.results as any[]).map((r: any) => r[0].transcript).join("");
+      setVoiceTranscript(heard);
+    };
+    recog.onend = () => { if (heard.trim()) sendVoiceMessage(heard); else setVoicePhase("idle"); };
+    recog.onerror = () => setVoicePhase("idle");
+    recognitionRef.current = recog;
+    setVoiceTranscript("");
+    setVoicePhase("listening");
+    recog.start();
+  };
+
+  const sendVoiceMessage = async (text: string) => {
+    setVoicePhase("thinking");
+    setVoiceResponse("");
+    setMessages(prev => [...prev, { role: "user" as const, content: text }]);
+    let fullContent = "";
+    let doneData: any = null;
+    try {
+      setMessages(prev => [...prev, { role: "assistant" as const, content: "" }]);
+      for await (const event of sendMessageStream(text, "executive", activeConversationId)) {
+        if (event.type === "start" && event.conversation_id) setActiveConversationId(event.conversation_id);
+        else if (event.type === "delta") {
+          fullContent += event.content;
+          setVoiceResponse(fullContent);
+          setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:fullContent}; return m; });
+        } else if (event.type === "done") {
+          doneData = event;
+          if (event.clean_content) { fullContent = event.clean_content; setVoiceResponse(fullContent);
+            setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:fullContent}; return m; }); }
+        }
+      }
+      if (doneData?.actions?.length) {
+        for (const action of doneData.actions.slice(0, 3)) {
+          if (action.action_type === "create_task" && action.data?.title) { setPendingTask(action.data.title); continue; }
+          if (action.action_type === "schedule_event" && (action as any).id && action.data?.title) {
+            setPendingEvent({ id:(action as any).id, title:action.data.title, start:action.data.start, end:action.data.end, location:action.data.location }); continue;
+          }
+          await executeAction(action);
+        }
+      }
+    } catch {}
+    setVoicePhase("speaking");
     window.speechSynthesis.cancel();
-    if (speakingIdx === idx) { setSpeakingIdx(null); return; }
-    const utter = new SpeechSynthesisUtterance(stripMarkdown(text));
-    utter.lang = "fr-FR";
-    utter.rate = 1.05;
-    utter.onend = () => setSpeakingIdx(null);
-    utter.onerror = () => setSpeakingIdx(null);
-    setSpeakingIdx(idx);
+    const utter = new SpeechSynthesisUtterance(stripMarkdown(fullContent || "Désolé, je n'ai pas compris."));
+    utter.lang = "fr-FR"; utter.rate = 1.05;
+    utter.onend = () => { if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle"); };
+    utter.onerror = () => { if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle"); };
     window.speechSynthesis.speak(utter);
   };
 
-  // Auto-speak : nouvelle réponse IA complète
-  useEffect(() => {
-    if (!autoSpeak || loading) return;
-    const last = messages[messages.length - 1];
-    if (!last || last.role !== "assistant" || !last.content) return;
-    const key = last.content.slice(0, 80);
-    if (key === lastAutoSpokenRef.current) return;
-    lastAutoSpokenRef.current = key;
-    const idx = messages.length - 1;
+  const closeVoice = () => {
+    voiceOpenRef.current = false;
+    setVoiceOpen(false);
     window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(stripMarkdown(last.content));
-    utter.lang = "fr-FR"; utter.rate = 1.05;
-    utter.onend = () => setSpeakingIdx(null);
-    utter.onerror = () => setSpeakingIdx(null);
-    setSpeakingIdx(idx);
-    window.speechSynthesis.speak(utter);
-  }, [messages, loading, autoSpeak]);
-
-  // Auto-speak : action tâche
-  useEffect(() => {
-    if (!autoSpeak || !pendingTask) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(`Nouvelle tâche créée : ${pendingTask.title}`);
-    u.lang = "fr-FR"; u.rate = 1.05;
-    window.speechSynthesis.speak(u);
-  }, [pendingTask, autoSpeak]);
-
-  // Auto-speak : action événement
-  useEffect(() => {
-    if (!autoSpeak || !pendingEvent) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(`Événement programmé : ${pendingEvent.title}`);
-    u.lang = "fr-FR"; u.rate = 1.05;
-    window.speechSynthesis.speak(u);
-  }, [pendingEvent, autoSpeak]);
+    recognitionRef.current?.abort();
+    setVoicePhase("idle");
+    setVoiceTranscript("");
+    setVoiceResponse("");
+  };
 
 
   if (view === "login") {
@@ -950,6 +974,63 @@ export default function App() {
         ...(isVertical ? { width: 380, maxHeight: 680, minHeight: 300 } : { width: 660, maxHeight: 500 }),
         ...(compactMode ? { borderRadius: 8, minHeight: 0 } : {}),
       }} className="ao-window">
+
+        {/* ── Overlay discussion vocale ── */}
+        {voiceOpen && (
+          <div style={{ position:"absolute", inset:0, zIndex:200, background:"rgba(8,8,18,0.97)", backdropFilter:"blur(16px)", display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center", gap:22, borderRadius:"inherit" }}>
+            {/* Fermer */}
+            <button onClick={closeVoice} className="no-drag" style={{ position:"absolute" as const, top:14, right:14, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, width:28, height:28, cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+            {/* Titre */}
+            <span style={{ position:"absolute" as const, top:18, left:20, fontSize:10, fontWeight:700, color:th.accent + "80", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Discussion vocale</span>
+            {/* Cercle animé */}
+            <div style={{ position:"relative" as const, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              {voicePhase === "listening" && (<>
+                <div style={{ position:"absolute" as const, width:188, height:188, borderRadius:"50%", border:`2px solid ${th.accent}33`, animation:"voicePulse 1.8s ease-out infinite" }}/>
+                <div style={{ position:"absolute" as const, width:160, height:160, borderRadius:"50%", border:`2px solid ${th.accent}55`, animation:"voicePulse 1.8s ease-out infinite 0.65s" }}/>
+              </>)}
+              {voicePhase === "speaking" && (<>
+                <div style={{ position:"absolute" as const, width:188, height:188, borderRadius:"50%", border:"2px solid rgba(52,211,153,0.28)", animation:"voicePulse 1.4s ease-out infinite" }}/>
+                <div style={{ position:"absolute" as const, width:160, height:160, borderRadius:"50%", border:"2px solid rgba(52,211,153,0.48)", animation:"voicePulse 1.4s ease-out infinite 0.45s" }}/>
+              </>)}
+              <div style={{
+                width:124, height:124, borderRadius:"50%",
+                background: voicePhase==="listening" ? `radial-gradient(circle, ${th.accent}2e 0%, ${th.accent}08 100%)` : voicePhase==="speaking" ? "radial-gradient(circle, rgba(52,211,153,0.18) 0%, rgba(52,211,153,0.03) 100%)" : "rgba(255,255,255,0.04)",
+                border: `3px solid ${voicePhase==="listening" ? th.accent : voicePhase==="speaking" ? "#34d399" : voicePhase==="thinking" ? th.accent+"80" : "rgba(255,255,255,0.13)"}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                boxShadow: voicePhase==="listening" ? `0 0 44px ${th.accent}40` : voicePhase==="speaking" ? "0 0 44px rgba(52,211,153,0.35)" : "none",
+                transition:"all 0.4s ease"
+              }}>
+                <span style={{ fontSize:48, lineHeight:1 }}>
+                  {voicePhase==="idle" ? "🎤" : voicePhase==="listening" ? "🎙️" : voicePhase==="thinking" ? "⚡" : "🔊"}
+                </span>
+              </div>
+            </div>
+            {/* Label de phase */}
+            <span style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.38)", letterSpacing:"0.14em", textTransform:"uppercase" as const }}>
+              {voicePhase==="idle" ? "Appuyez pour parler" : voicePhase==="listening" ? "En écoute..." : voicePhase==="thinking" ? "Traitement..." : "Réponse en cours..."}
+            </span>
+            {/* Transcription */}
+            {voiceTranscript && (
+              <div style={{ maxWidth:"82%", textAlign:"center" as const, fontSize:13, color:"rgba(255,255,255,0.62)", fontStyle:"italic", lineHeight:1.55, padding:"0 10px" }}>
+                « {voiceTranscript} »
+              </div>
+            )}
+            {/* Réponse IA (streaming) */}
+            {voiceResponse && (
+              <div style={{ maxWidth:"88%", textAlign:"center" as const, fontSize:12, color:"rgba(185,195,255,0.82)", lineHeight:1.65, maxHeight:90, overflow:"hidden" as const }}>
+                {voiceResponse.length > 230 ? voiceResponse.slice(0,230)+"…" : voiceResponse}
+              </div>
+            )}
+            {/* Bouton micro manuel si idle */}
+            {voicePhase === "idle" && (
+              <button className="no-drag" onClick={startVoiceListening}
+                style={{ width:66, height:66, borderRadius:"50%", background:`linear-gradient(135deg,${th.accent},${th.accentLight})`, border:"none", cursor:"pointer", fontSize:26, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 0 28px ${th.accent}55`, transition:"transform 0.15s" }}>
+                🎤
+              </button>
+            )}
+          </div>
+        )}
+
         {/* En-tête — zone de déplacement */}
         <div style={{
           ...styles.header,
@@ -1490,17 +1571,9 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Boutons copier + dicter + épingler */}
+                {/* Boutons copier + épingler */}
                 {m.role === "assistant" && (
                   <div style={{ marginTop:6, display:"flex", gap:5 }}>
-                    <button
-                      title={speakingIdx === i ? "Arrêter la lecture" : "Dicter à voix haute"}
-                      onClick={() => speakMessage(m.content, i)}
-                      className="ao-action-btn"
-                      style={{ display:"flex", alignItems:"center", gap:5, background: speakingIdx === i ? th.accent + "26" : "rgba(255,255,255,0.05)", border: speakingIdx === i ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", borderRadius:7, padding:"4px 10px", cursor:"pointer", transition:"all 0.15s", color: speakingIdx === i ? th.accentLight : "rgba(255,255,255,0.35)", fontSize:11, fontFamily:"inherit" }}>
-                      <span style={{ fontSize:12 }}>{speakingIdx === i ? "⏹" : "🔊"}</span>
-                      <span>{speakingIdx === i ? "Arrêter" : "Dicter"}</span>
-                    </button>
                     <button
                       title="Copier la réponse"
                       onClick={async () => { await (window.api as any)?.writeClipboard(m.content); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 1500); }}
@@ -2316,17 +2389,12 @@ export default function App() {
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
               <span style={{ fontSize:13, lineHeight:1 }}>⏱</span>
             </button>
-            {/* Lecture automatique */}
+            {/* Discussion vocale */}
             <button title="" className="no-drag ao-icon-btn"
-              onMouseEnter={e => showTip(e, autoSpeak ? "Désactiver la lecture auto" : "Activer la lecture auto")} onMouseLeave={hideTip}
-              onClick={() => {
-                const next = !autoSpeak;
-                setAutoSpeak(next);
-                localStorage.setItem("omnyx_autospeak", next ? "1" : "0");
-                if (!next) { window.speechSynthesis.cancel(); setSpeakingIdx(null); }
-              }}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: autoSpeak ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: autoSpeak ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
-              <span style={{ fontSize:13, lineHeight:1 }}>{autoSpeak ? "🔊" : "🔇"}</span>
+              onMouseEnter={e => showTip(e, "Discussion vocale")} onMouseLeave={hideTip}
+              onClick={() => { voiceOpenRef.current = true; setVoiceOpen(true); setTimeout(startVoiceListening, 350); }}
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: voiceOpen ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: voiceOpen ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
+              <span style={{ fontSize:13, lineHeight:1 }}>🎤</span>
             </button>
             {/* Mode compact */}
             <button title="" className="no-drag ao-icon-btn"
@@ -2382,6 +2450,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "transparent",
   },
   window: {
+    position: "relative",
     width: 660, maxHeight: 500,
     background: "rgba(8, 8, 16, 0.97)",
     border: "1px solid rgba(124, 58, 237, 0.5)",
