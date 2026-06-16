@@ -100,6 +100,16 @@ export async function createTask(title: string, priority: Task["priority"] = "me
   return data as Task;
 }
 
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const form = new FormData();
+  form.append("audio", blob, "audio.webm");
+  const { data } = await api.post("/api/voice/transcribe", form, {
+    headers: { "Content-Type": undefined },
+    timeout: 30000,
+  });
+  return (data.transcript as string) || "";
+}
+
 export async function approveAction(action_id: string, approved: boolean) {
   const { data } = await api.post("/api/actions/approve", { action_id, approved });
   return data;

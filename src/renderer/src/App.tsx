@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
-import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, approveAction, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
+import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, approveAction, transcribeAudio, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
 import { fetchStale } from "./stale";
 import { detectContext, AppContext } from "./contexts";
 import { generateSuggestions } from "./suggestions";
@@ -862,27 +862,78 @@ export default function App() {
     .replace(/^[-*+]\s/gm, "").replace(/^>\s?/gm, "").replace(/---+/g, "").trim();
 
   const startVoiceListening = async () => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop()); // libère le micro pour SpeechRecognition
-    } catch { return; }
-    const recog = new SR();
-    recog.lang = "fr-FR";
-    recog.continuous = false;
-    recog.interimResults = true;
-    let heard = "";
-    recog.onresult = (e: any) => {
-      heard = Array.from(e.results as any[]).map((r: any) => r[0].transcript).join("");
-      setVoiceTranscript(heard);
-    };
-    recog.onend = () => { if (heard.trim()) sendVoiceMessage(heard); else if (voiceOpenRef.current) setTimeout(startVoiceListening, 200); };
-    recog.onerror = () => { if (voiceOpenRef.current) setTimeout(startVoiceListening, 400); };
-    recognitionRef.current = recog;
+    let stream: MediaStream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { if (voiceOpenRef.current) setTimeout(startVoiceListening, 600); return; }
+
     setVoiceTranscript("");
     setVoicePhase("listening");
-    recog.start();
+
+    // Détection de silence via AnalyserNode
+    const audioCtx = new AudioContext();
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    const src = audioCtx.createMediaStreamSource(stream);
+    src.connect(analyser);
+    const freqData = new Uint8Array(analyser.frequencyBinCount);
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg";
+
+    const recorder = new MediaRecorder(stream, { mimeType });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+    recorder.onstop = async () => {
+      audioCtx.close();
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(chunks, { type: mimeType });
+      if (blob.size < 800) {
+        if (voiceOpenRef.current) setTimeout(startVoiceListening, 200);
+        return;
+      }
+      setVoicePhase("thinking");
+      try {
+        const transcript = await transcribeAudio(blob);
+        if (transcript.trim()) {
+          setVoiceTranscript(transcript);
+          await sendVoiceMessage(transcript);
+        } else {
+          if (voiceOpenRef.current) startVoiceListening();
+        }
+      } catch {
+        if (voiceOpenRef.current) setTimeout(startVoiceListening, 600);
+      }
+    };
+
+    recognitionRef.current = { stop: () => { try { recorder.stop(); } catch {} } };
+    recorder.start(100);
+
+    // Boucle de détection silence
+    let silenceStart = 0;
+    let hasSpoken = false;
+    let stopped = false;
+    const THRESHOLD = 8;
+    const SILENCE_MS = 1800;
+    const MAX_MS = 25000;
+    const t0 = Date.now();
+
+    const tick = () => {
+      if (stopped) return;
+      if (!voiceOpenRef.current || Date.now() - t0 > MAX_MS) {
+        stopped = true; recorder.stop(); return;
+      }
+      analyser.getByteFrequencyData(freqData);
+      const avg = freqData.reduce((a, b) => a + b, 0) / freqData.length;
+      if (avg > THRESHOLD) { hasSpoken = true; silenceStart = 0; }
+      else if (hasSpoken) {
+        if (!silenceStart) silenceStart = Date.now();
+        if (Date.now() - silenceStart >= SILENCE_MS) { stopped = true; recorder.stop(); return; }
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
   };
 
   const sendVoiceMessage = async (text: string) => {
@@ -928,7 +979,7 @@ export default function App() {
     voiceOpenRef.current = false;
     setVoiceOpen(false);
     window.speechSynthesis.cancel();
-    recognitionRef.current?.abort();
+    try { recognitionRef.current?.stop?.(); } catch {}
     setVoicePhase("idle");
     setVoiceTranscript("");
     setVoiceResponse("");
