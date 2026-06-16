@@ -107,6 +107,7 @@ export default function App() {
   const [attachedFile, setAttachedFile] = useState<{ name: string; type: "image" | "text"; content?: string; base64?: string; mime_type?: string } | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -850,6 +851,23 @@ export default function App() {
 
   const timerFmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
+  const stripMarkdown = (text: string) => text
+    .replace(/#{1,6}\s?/g, "").replace(/\*\*(.+?)\*\*/gs, "$1").replace(/\*(.+?)\*/gs, "$1")
+    .replace(/`{1,3}[\s\S]*?`{1,3}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^[-*+]\s/gm, "").replace(/^>\s?/gm, "").replace(/---+/g, "").trim();
+
+  const speakMessage = (text: string, idx: number) => {
+    window.speechSynthesis.cancel();
+    if (speakingIdx === idx) { setSpeakingIdx(null); return; }
+    const utter = new SpeechSynthesisUtterance(stripMarkdown(text));
+    utter.lang = "fr-FR";
+    utter.rate = 1.05;
+    utter.onend = () => setSpeakingIdx(null);
+    utter.onerror = () => setSpeakingIdx(null);
+    setSpeakingIdx(idx);
+    window.speechSynthesis.speak(utter);
+  };
+
 
   if (view === "login") {
     return (
@@ -1434,9 +1452,17 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Boutons copier + épingler */}
+                {/* Boutons copier + dicter + épingler */}
                 {m.role === "assistant" && (
                   <div style={{ marginTop:6, display:"flex", gap:5 }}>
+                    <button
+                      title={speakingIdx === i ? "Arrêter la lecture" : "Dicter à voix haute"}
+                      onClick={() => speakMessage(m.content, i)}
+                      className="ao-action-btn"
+                      style={{ display:"flex", alignItems:"center", gap:5, background: speakingIdx === i ? th.accent + "26" : "rgba(255,255,255,0.05)", border: speakingIdx === i ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", borderRadius:7, padding:"4px 10px", cursor:"pointer", transition:"all 0.15s", color: speakingIdx === i ? th.accentLight : "rgba(255,255,255,0.35)", fontSize:11, fontFamily:"inherit" }}>
+                      <span style={{ fontSize:12 }}>{speakingIdx === i ? "⏹" : "🔊"}</span>
+                      <span>{speakingIdx === i ? "Arrêter" : "Dicter"}</span>
+                    </button>
                     <button
                       title="Copier la réponse"
                       onClick={async () => { await (window.api as any)?.writeClipboard(m.content); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 1500); }}
