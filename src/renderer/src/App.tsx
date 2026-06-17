@@ -119,8 +119,15 @@ export default function App() {
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceInterruptedRef = useRef(false);
   const interruptCleanupRef = useRef<(() => void) | null>(null);
+  const voiceModeRef = useRef(false);
+  const voiceDialogRef = useRef<
+    | { type: "task_priority"; title: string }
+    | { type: "event_confirm"; id: string; title: string; start: string; end: string; location?: string }
+    | null
+  >(null);
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
+  const [selectedText, setSelectedText] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const showTip = (e: React.MouseEvent, text: string) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setTooltip({ text, x: r.left + r.width / 2, y: r.bottom + 6 }); };
   const hideTip = () => setTooltip(null);
@@ -331,6 +338,12 @@ export default function App() {
       setPendingClipboardImage(base64);
     });
 
+    // Texte sélectionné dans une autre app
+    // @ts-ignore
+    window.api?.onTextSelected?.((text: string) => {
+      setSelectedText(text);
+    });
+
     // Arrêter le mode vocal quand la fenêtre se cache
     // @ts-ignore
     window.api?.onWindowHidden?.(() => {
@@ -497,6 +510,12 @@ export default function App() {
       const idx = t.indexOf(_norm2(reminderMatch));
       const title = text.slice(idx + reminderMatch.length).trim().replace(/[?.!]+$/, "");
       if (title) {
+        if (voiceModeRef.current) {
+          // En mode vocal : rappel dans 30 minutes par défaut, pas de dialog
+          // @ts-ignore
+          window.api?.scheduleReminder(title, 30 * 60 * 1000);
+          return { handled: true, result: `Rappel créé pour "${title}" dans 30 minutes.` };
+        }
         setPendingReminder(title);
         return { handled: true, result: `D'accord, configurons ton rappel pour : "${title}"` };
       }
@@ -519,7 +538,10 @@ export default function App() {
         .replace(/urgent[e]?s?|haute\s+priorité?|important[e]?|basse|faible|priorité?\s*\w*/gi, "")
         .replace(/[,"""]/g, "").replace(/\s+/g, " ").trim();
       if (title) {
-        // Afficher le sélecteur de priorité au lieu de créer directement
+        if (voiceModeRef.current) {
+          voiceDialogRef.current = { type: "task_priority", title };
+          return { handled: true, result: "__voice__" };
+        }
         setPendingTask(title);
         return { handled: true, result: `Quelle priorité pour "${title}" ?` };
       }
@@ -1010,13 +1032,90 @@ export default function App() {
     setVoicePhase("thinking");
     setVoiceResponse("");
     voiceInterruptedRef.current = false;
+    voiceModeRef.current = true;
     setMessages(prev => [...prev, { role: "user" as const, content: text }]);
+
+    const speakAndListen = async (msg: string) => {
+      setVoiceResponse(msg);
+      setVoicePhase("speaking");
+      try {
+        const buf = await synthesizeSpeech(msg.slice(0, 500));
+        if (voiceOpenRef.current && !voiceInterruptedRef.current) {
+          const blob = new Blob([buf], { type: "audio/mpeg" });
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          voiceAudioRef.current = audio;
+          await new Promise<void>((resolve) => {
+            audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+            audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+            audio.play().catch(() => resolve());
+          });
+        }
+      } catch {}
+      if (!voiceInterruptedRef.current && voiceOpenRef.current) startVoiceListening();
+      else if (!voiceOpenRef.current) setVoicePhase("idle");
+    };
+
+    // Gérer le dialog multi-tour (confirmation tâche/événement)
+    const dialog = voiceDialogRef.current;
+    if (dialog) {
+      const t2 = text.toLowerCase().trim();
+      if (dialog.type === "task_priority") {
+        let priority: "urgent" | "high" | "medium" | "low" = "medium";
+        if (/urgent|urgente/.test(t2)) priority = "urgent";
+        else if (/haute|haut/.test(t2)) priority = "high";
+        else if (/basse|bas/.test(t2)) priority = "low";
+        else if (/normal|moyenne/.test(t2)) priority = "medium";
+        voiceDialogRef.current = null;
+        voiceModeRef.current = false;
+        try {
+          await createTask(dialog.title, priority);
+          await loadTasks();
+          const labels: Record<string, string> = { urgent: "urgente", high: "haute", medium: "normale", low: "basse" };
+          const msg = `Tâche "${dialog.title}" créée avec priorité ${labels[priority]}.`;
+          setMessages(prev => [...prev, { role: "assistant" as const, content: msg }]);
+          await speakAndListen(msg);
+        } catch { await speakAndListen("Erreur lors de la création de la tâche."); }
+        return;
+      }
+      if (dialog.type === "event_confirm") {
+        const approved = /oui|yes|confirm|ok|valide/.test(t2);
+        const denied = /non|no|annule|cancel|refuse/.test(t2);
+        if (approved || denied) {
+          voiceDialogRef.current = null;
+          voiceModeRef.current = false;
+          try {
+            await approveAction(dialog.id, approved);
+            const msg = approved ? `Événement "${dialog.title}" confirmé.` : `Événement "${dialog.title}" annulé.`;
+            setMessages(prev => [...prev, { role: "assistant" as const, content: msg }]);
+            await speakAndListen(msg);
+          } catch { await speakAndListen("Erreur lors de la confirmation."); }
+          return;
+        }
+        // Réponse incomprise → redemander
+        const question = `Je n'ai pas compris. Pour l'événement "${dialog.title}", dis "oui" pour confirmer ou "non" pour annuler.`;
+        setMessages(prev => [...prev, { role: "assistant" as const, content: question }]);
+        voiceModeRef.current = false;
+        await speakAndListen(question);
+        return;
+      }
+    }
 
     // Actions locales en priorité (capture, ouvrir app, URL, tâche, rappel...)
     const intent = await handleIntent(text);
     if (intent.handled) {
+      voiceModeRef.current = false;
       const result = intent.result || "";
-      setMessages(prev => [...prev, { role: "assistant" as const, content: result }]);
+      setMessages(prev => [...prev, { role: "assistant" as const, content: result === "__voice__" ? "" : result }]);
+
+      // Dialog vocal : tâche → demander la priorité
+      if (result === "__voice__" && voiceDialogRef.current?.type === "task_priority") {
+        const question = `Quelle priorité pour "${voiceDialogRef.current.title}" ? Urgente, haute, normale ou basse.`;
+        setMessages(prev => { const msgs=[...prev]; msgs[msgs.length-1]={role:"assistant",content:question}; return msgs; });
+        await speakAndListen(question);
+        return;
+      }
+
       setVoiceResponse(result);
       setVoicePhase("speaking");
       try {
@@ -1148,8 +1247,28 @@ export default function App() {
       interruptCleanupRef.current?.();
       if (doneData?.actions?.length) {
         for (const action of doneData.actions.slice(0, 3)) {
-          if (action.action_type === "create_task" && action.data?.title) { setPendingTask(action.data.title); continue; }
+          if (action.action_type === "create_task" && action.data?.title) {
+            if (voiceModeRef.current) {
+              voiceDialogRef.current = { type: "task_priority", title: action.data.title };
+              voiceModeRef.current = false;
+              const question = `Quelle priorité pour "${action.data.title}" ? Urgente, haute, normale ou basse.`;
+              setMessages(prev => [...prev, { role: "assistant" as const, content: question }]);
+              await speakAndListen(question);
+              return;
+            }
+            setPendingTask(action.data.title); continue;
+          }
           if (action.action_type === "schedule_event" && (action as any).id && action.data?.title) {
+            if (voiceModeRef.current) {
+              const ev = { id:(action as any).id, title:action.data.title, start:action.data.start, end:action.data.end, location:action.data.location };
+              voiceDialogRef.current = { type: "event_confirm", ...ev };
+              voiceModeRef.current = false;
+              const dateStr = action.data.start ? new Date(action.data.start).toLocaleString("fr-FR", { dateStyle:"short", timeStyle:"short" }) : "";
+              const question = `J'ai trouvé : "${action.data.title}"${dateStr ? ` le ${dateStr}` : ""}. Je confirme ?`;
+              setMessages(prev => [...prev, { role: "assistant" as const, content: question }]);
+              await speakAndListen(question);
+              return;
+            }
             setPendingEvent({ id:(action as any).id, title:action.data.title, start:action.data.start, end:action.data.end, location:action.data.location }); continue;
           }
           await executeAction(action);
@@ -1157,11 +1276,13 @@ export default function App() {
       }
     } catch (e: any) {
       interruptCleanupRef.current?.();
+      voiceModeRef.current = false;
       const msg = e?.response?.data?.detail || e?.message || "Erreur réseau";
       setVoiceError(msg);
       if (voiceOpenRef.current) setTimeout(startVoiceListening, 1500);
       return;
     }
+    voiceModeRef.current = false;
     if (!voiceInterruptedRef.current) {
       if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle");
     }
@@ -1559,6 +1680,59 @@ export default function App() {
               Joindre
             </button>
             <button onClick={() => setPendingClipboardImage(null)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:13, padding:0 }}>✕</button>
+          </div>
+        )}
+
+        {/* Bannière texte sélectionné */}
+        {selectedText && (
+          <div style={{ padding:"8px 14px", background:"rgba(99,102,241,0.08)", borderBottom:"1px solid rgba(99,102,241,0.2)", display:"flex", flexDirection:"column" as const, gap:6 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <MousePointer2 size={11} color="#818cf8" />
+              <span style={{ fontSize:11, color:"#a5b4fc", flex:1 }}>Texte sélectionné</span>
+              <button onClick={() => setSelectedText(null)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.25)", fontSize:13, padding:0 }}>✕</button>
+            </div>
+            <div style={{ fontSize:11, color:"#888", fontStyle:"italic", maxHeight:48, overflow:"hidden", lineHeight:1.4 }}>
+              "{selectedText.length > 160 ? selectedText.slice(0, 160) + "…" : selectedText}"
+            </div>
+            <div style={{ display:"flex", gap:5, flexWrap:"wrap" as const }}>
+              {[
+                { label: "Résumer", prompt: `Résume ce texte en 2-3 phrases :\n\n"${selectedText}"` },
+                { label: "Expliquer", prompt: `Explique ce texte simplement :\n\n"${selectedText}"` },
+                { label: "Traduire", prompt: `Traduis ce texte en français (ou en anglais s'il est déjà en français) :\n\n"${selectedText}"` },
+                { label: "Réécrire", prompt: `Réécris ce texte de manière plus claire et professionnelle :\n\n"${selectedText}"` },
+              ].map(({ label, prompt }) => (
+                <button key={label} className="no-drag" onClick={async () => {
+                  const txt = selectedText;
+                  setSelectedText(null);
+                  setInput("");
+                  setLoading(true);
+                  setMessages(prev => [...prev, { role: "user" as const, content: prompt, ts: now() }]);
+                  try {
+                    const { sendMessageStream } = await import("./api");
+                    let full = "";
+                    setMessages(prev => [...prev, { role: "assistant" as const, content: "", ts: now() }]);
+                    for await (const ev of sendMessageStream(prompt, "executive", activeConversationId)) {
+                      if (ev.type === "start" && ev.conversation_id) setActiveConversationId(ev.conversation_id);
+                      else if (ev.type === "delta") {
+                        full += ev.content;
+                        setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:full,ts:now()}; return m; });
+                      } else if (ev.type === "done" && ev.clean_content) {
+                        full = ev.clean_content;
+                        setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:full,ts:now()}; return m; });
+                      }
+                    }
+                  } catch (e: any) {
+                    setMessages(prev => [...prev, { role: "assistant" as const, content: "Erreur : " + (e?.message || "réseau"), ts: now() }]);
+                  } finally { setLoading(false); }
+                }} style={{ background:"rgba(99,102,241,0.2)", border:"1px solid rgba(99,102,241,0.4)", borderRadius:6, padding:"3px 10px", fontSize:10, color:"#a5b4fc", cursor:"pointer" }}>
+                  {label}
+                </button>
+              ))}
+              <button className="no-drag" onClick={() => { setInput(selectedText); setSelectedText(null); setTimeout(() => inputRef.current?.focus(), 50); }}
+                style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, padding:"3px 10px", fontSize:10, color:"#888", cursor:"pointer" }}>
+                Modifier…
+              </button>
+            </div>
           </div>
         )}
 
