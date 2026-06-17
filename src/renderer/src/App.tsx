@@ -432,7 +432,8 @@ export default function App() {
     const norm = (s: string) => s.toLowerCase()
       .replace(/[éèêë]/g, "e").replace(/[àâä]/g, "a").replace(/[ùûü]/g, "u")
       .replace(/[îï]/g, "i").replace(/[ôö]/g, "o").replace(/[ç]/g, "c")
-      .replace(/[‘’ʼ´`]/g, "'");
+      .replace(/[‘’ʼ´`]/g, "’")
+      .replace(/-/g, " ");
     const _norm2 = (s: string) => s.toLowerCase()
       .replace(/[éèêë]/g, "e").replace(/[àâä]/g, "a").replace(/[ùûü]/g, "u")
       .replace(/[îï]/g, "i").replace(/[ôö]/g, "o").replace(/[ç]/g, "c")
@@ -442,24 +443,43 @@ export default function App() {
     const APP_MAP: Record<string, string> = {
       "discord": "discord", "spotify": "spotify", "musique": "spotify", "music": "spotify",
       "chrome": "chrome", "google": "chrome", "navigateur": "chrome", "browser": "chrome",
-      "firefox": "firefox", "vscode": "vscode", "code": "vscode", "visual studio": "vscode",
-      "explorateur": "explorer", "fichiers": "explorer", "explorer": "explorer",
-      "notepad": "notepad", "bloc note": "notepad", "bloc-note": "notepad", "editeur": "notepad", "blocnote": "notepad",
+      "brave": "brave", "edge": "msedge", "microsoft edge": "msedge",
+      "firefox": "firefox", "opera": "opera",
+      "vscode": "vscode", "code": "vscode", "visual studio code": "vscode", "visual studio": "vscode",
+      "explorateur": "explorer", "fichiers": "explorer", "explorer": "explorer", "gestionnaire de fichiers": "explorer",
+      "notepad": "notepad", "bloc note": "notepad", "bloc-note": "notepad", "editeur de texte": "notepad", "blocnote": "notepad",
       "calculatrice": "calculatrice", "calculette": "calculatrice", "calc": "calculatrice",
-      "terminal": "terminal", "console": "terminal", "invite de commande": "terminal",
+      "terminal": "terminal", "console": "terminal", "invite de commande": "terminal", "powershell": "powershell",
       "word": "word", "traitement de texte": "word",
       "excel": "excel", "tableur": "excel",
-      "outlook": "outlook", "messagerie": "outlook",
+      "powerpoint": "powershell", "presentation": "powershell",
+      "outlook": "outlook", "messagerie": "outlook", "emails": "outlook", "mail": "outlook",
       "teams": "teams", "slack": "slack", "zoom": "zoom",
       "steam": "steam", "notion": "notion", "paint": "paint",
-      "telegram": "telegram", "whatsapp": "whatsapp", "gestionnaire": "taskmgr",
+      "telegram": "telegram", "whatsapp": "whatsapp",
+      "gestionnaire de taches": "taskmgr", "task manager": "taskmgr",
+      "obs": "obs", "vlc": "vlc", "gimp": "gimp", "figma": "figma",
     };
 
-    const OPEN_WORDS = ["ouvre", "lance", "demarre", "start", "open", "mets", "active", "utilise", "accede", "besoin", "veux", "peux tu ouvrir", "peut tu ouvrir", "pourrais tu ouvrir"];
-    // Mots sans ambiguïté : si l'app n'est pas reconnue, on tente quand même de
-    // l'ouvrir. Les autres (veux, mets, utilise...) sont trop fréquents dans des
-    // phrases normales pour servir à deviner un nom d'appli inconnu.
-    const STRONG_OPEN_WORDS = ["ouvre", "lance", "demarre", "start", "open", "peux tu ouvrir", "peut tu ouvrir", "pourrais tu ouvrir"];
+    const OPEN_WORDS = [
+      "ouvre", "ouvrir", "ouvrez",
+      "lance", "lancer", "lancez",
+      "demarre", "demarrer",
+      "start", "open",
+      "mets", "active", "utilise", "accede", "besoin", "veux",
+      "peux tu ouvrir", "peut tu ouvrir", "pourrais tu ouvrir",
+      "tu peux ouvrir", "tu pourrais ouvrir",
+      "peux tu lancer", "tu peux lancer",
+    ];
+    const STRONG_OPEN_WORDS = [
+      "ouvre", "ouvrir", "ouvrez",
+      "lance", "lancer", "lancez",
+      "demarre", "demarrer",
+      "start", "open",
+      "peux tu ouvrir", "peut tu ouvrir", "pourrais tu ouvrir",
+      "tu peux ouvrir", "tu pourrais ouvrir",
+      "peux tu lancer", "tu peux lancer",
+    ];
     const FILE_WORDS = ["trouve", "cherche", "recherche", "localise", "ou est"];
 
     // Rappel / reminder → ouvre directement le panneau de fréquence
@@ -485,7 +505,9 @@ export default function App() {
     // Créer une tâche directement via l'API
     const TASK_WORDS = [
       "cree une tache", "cree la tache", "ajoute une tache", "nouvelle tache", "ajoute la tache",
-      "todo:", "a faire:", "task:", "ajoute a ma liste", "note de faire",
+      "creer une tache", "creer la tache", "ajouter une tache",
+      "todo:", "a faire:", "task:", "ajoute a ma liste", "ajouter a ma liste", "note de faire",
+      "mets dans mes taches", "met dans mes taches", "ajoute dans mes taches",
     ];
     const hasTask = TASK_WORDS.some(w => t.includes(w));
     if (hasTask) {
@@ -560,9 +582,12 @@ export default function App() {
       if (foundAppKey) {
         appName = APP_MAP[foundAppKey];
       } else if (hasStrongOpen) {
-        const candidate = text.replace(/^.*(ouvre|lance|demarre|start|open|peux tu ouvrir|peut tu ouvrir|pourrais tu ouvrir)\s+/i, "").replace(/[?!.]/g, "").trim();
-        // Un nom d'appli est court — une phrase entière n'en est pas un.
-        if (candidate && candidate.split(/\s+/).length <= 4) appName = candidate;
+        const candidate = text
+          .replace(/^.*(?:ouvre(?:z|r)?|lance(?:z|r)?|demarr?e(?:z|r)?|start|open|(?:peux|peut|pourrais)[- ]?tu (?:ouvrir?|lancer?)|tu peux (?:ouvrir?|lancer?))\s*/i, "")
+          .replace(/^(?:moi|le|la|les|l[''](?:application\s*)?|mon|ton|un|une)\s+/i, "")
+          .replace(/[?!.,]+$/, "")
+          .trim();
+        if (candidate && candidate.split(/\s+/).length <= 5) appName = candidate;
       }
       if (appName) {
         // @ts-ignore
