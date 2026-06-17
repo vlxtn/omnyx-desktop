@@ -21,6 +21,7 @@ const api = {
   setResizable: (resizable: boolean) => ipcRenderer.send("set-resizable", resizable),
   getActiveUrl: () => ipcRenderer.invoke("get-active-url"),
   onWindowShown: (cb: () => void) => ipcRenderer.on("window-shown", cb),
+  onWindowHidden: (cb: () => void) => ipcRenderer.on("window-hidden", cb),
   onUrlChanged: (cb: (signal: string, url: string) => void) => ipcRenderer.on("url-changed", (_, signal, url) => cb(signal, url)),
   onAnalyzePage: (cb: () => void) => ipcRenderer.on("action-analyze-page", cb),
   onQuickTask: (cb: () => void) => ipcRenderer.on("action-quick-task", cb),

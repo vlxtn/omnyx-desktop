@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check } from "lucide-react";
+import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check, Mic, Volume2, Loader2 } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
 import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, approveAction, transcribeAudio, synthesizeSpeech, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
@@ -329,6 +329,21 @@ export default function App() {
       setPendingClipboardImage(base64);
     });
 
+    // Arrêter le mode vocal quand la fenêtre se cache
+    // @ts-ignore
+    window.api?.onWindowHidden?.(() => {
+      if (!voiceOpenRef.current) return;
+      voiceOpenRef.current = false;
+      setVoiceOpen(false);
+      if (voiceAudioRef.current) { voiceAudioRef.current.pause(); voiceAudioRef.current = null; }
+      try { recognitionRef.current?.stop?.(); } catch {}
+      analyserRef.current = null;
+      setVoicePhase("idle");
+      setVoiceTranscript("");
+      setVoiceResponse("");
+      setVoiceError("");
+    });
+
   }, []);
 
 
@@ -336,10 +351,21 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Touche Echap pour fermer la fenêtre
+  // Touche Echap pour fermer la fenêtre (stoppe le mode vocal si actif)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (voiceOpenRef.current) {
+          voiceOpenRef.current = false;
+          setVoiceOpen(false);
+          if (voiceAudioRef.current) { voiceAudioRef.current.pause(); voiceAudioRef.current = null; }
+          try { recognitionRef.current?.stop?.(); } catch {}
+          analyserRef.current = null;
+          setVoicePhase("idle");
+          setVoiceTranscript("");
+          setVoiceResponse("");
+          setVoiceError("");
+        }
         // @ts-ignore
         window.api?.hideWindow();
       }
@@ -2491,8 +2517,8 @@ export default function App() {
             <button title="" className="no-drag ao-icon-btn"
               onMouseEnter={e => showTip(e, "Discussion vocale")} onMouseLeave={hideTip}
               onClick={() => { voiceOpenRef.current = true; setVoiceOpen(true); setTimeout(startVoiceListening, 350); }}
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: voiceOpen ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: voiceOpen ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
-              <span style={{ fontSize:13, lineHeight:1 }}>🎤</span>
+              style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: voiceOpen ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: voiceOpen ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0, transition:"all 0.2s" }}>
+              <Mic size={14} color={voiceOpen ? th.accent : "rgba(255,255,255,0.45)"} style={voiceOpen ? { filter:`drop-shadow(0 0 5px ${th.accent})`, transition:"all 0.2s" } : { transition:"all 0.2s" }} />
             </button>
             {/* Mode compact */}
             <button title="" className="no-drag ao-icon-btn"
@@ -2552,7 +2578,12 @@ export default function App() {
                 <div style={{ position:"absolute" as const, width:160, height:160, borderRadius:"50%", border:"2px solid rgba(52,211,153,0.48)", animation:"voicePulse 1.4s ease-out infinite 0.45s" }}/>
               </>)}
               <div style={{ width:124, height:124, borderRadius:"50%", background: voicePhase==="listening" ? `radial-gradient(circle,${th.accent}2e 0%,${th.accent}08 100%)` : voicePhase==="speaking" ? "radial-gradient(circle,rgba(52,211,153,0.18) 0%,rgba(52,211,153,0.03) 100%)" : "rgba(255,255,255,0.04)", border:`3px solid ${voicePhase==="listening"?th.accent:voicePhase==="speaking"?"#34d399":voicePhase==="thinking"?th.accent+"80":"rgba(255,255,255,0.13)"}`, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:voicePhase==="listening"?`0 0 44px ${th.accent}40`:voicePhase==="speaking"?"0 0 44px rgba(52,211,153,0.35)":"none", transition:"all 0.4s ease" }}>
-                <span style={{ fontSize:48, lineHeight:1 }}>{voicePhase==="listening"?"🎙️":voicePhase==="thinking"?"⚡":"🔊"}</span>
+                {voicePhase==="listening"
+                  ? <Mic size={46} color={th.accent} style={{ filter:`drop-shadow(0 0 14px ${th.accent})` }} />
+                  : voicePhase==="thinking"
+                  ? <Loader2 size={46} color={th.accentLight} style={{ animation:"spin 1s linear infinite", opacity:0.85 }} />
+                  : <Volume2 size={46} color="#34d399" style={{ filter:"drop-shadow(0 0 14px rgba(52,211,153,0.9))" }} />
+                }
               </div>
             </div>
             <span style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.38)", letterSpacing:"0.14em", textTransform:"uppercase" as const }}>

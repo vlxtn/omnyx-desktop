@@ -251,6 +251,7 @@ function showWindow(): void {
 
 function hideWindow(): void {
   if (!commandWindow) return;
+  commandWindow.webContents.send("window-hidden");
   commandWindow.hide();
   isVisible = false;
 }
