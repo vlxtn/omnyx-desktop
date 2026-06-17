@@ -1696,8 +1696,8 @@ export default function App() {
 
         {/* Panneau réponse compact */}
         {compactMode && compactResponse && (
-          <div style={{ display:"flex", flexDirection:"column" as const, height:"calc(100% - 60px)", overflow:"hidden" }}>
-            <div style={{ flex:1, overflowY:"auto" as const, padding:"12px 16px 8px", scrollbarWidth:"thin" as const }}>
+          <div style={{ display:"flex", flexDirection:"column" as const, overflow:"hidden" }}>
+            <div style={{ maxHeight:280, overflowY:"auto" as const, padding:"12px 16px 8px", scrollbarWidth:"thin" as const, color:"#e2e8f0", fontSize:13, lineHeight:1.6 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{compactResponse}</ReactMarkdown>
             </div>
             <div style={{ display:"flex", gap:6, padding:"8px 14px 10px", borderTop:"1px solid rgba(255,255,255,0.06)", flexShrink:0 }}>
@@ -1705,11 +1705,7 @@ export default function App() {
                 style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:7, padding:"5px 10px", cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:11, fontFamily:"inherit" }}>
                 Fermer
               </button>
-              <button onClick={async () => {
-                if (compactResponse) {
-                  await (window.api as any)?.writeClipboard(compactResponse);
-                }
-              }} className="no-drag"
+              <button onClick={async () => { await (window.api as any)?.writeClipboard(compactResponse); }} className="no-drag"
                 style={{ background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:7, padding:"5px 12px", cursor:"pointer", color:"#a5b4fc", fontSize:11, fontFamily:"inherit" }}>
                 ⎘ Copier
               </button>
