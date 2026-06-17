@@ -117,6 +117,8 @@ export default function App() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceInterruptedRef = useRef(false);
+  const interruptCleanupRef = useRef<(() => void) | null>(null);
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -979,6 +981,7 @@ export default function App() {
   const sendVoiceMessage = async (text: string) => {
     setVoicePhase("thinking");
     setVoiceResponse("");
+    voiceInterruptedRef.current = false;
     setMessages(prev => [...prev, { role: "user" as const, content: text }]);
 
     // Actions locales en priorité (capture, ouvrir app, URL, tâche, rappel...)
@@ -992,7 +995,7 @@ export default function App() {
         const stripped = stripMarkdown(result).slice(0, 500).trim();
         if (stripped) {
           const buf = await synthesizeSpeech(stripped);
-          if (voiceOpenRef.current) {
+          if (voiceOpenRef.current && !voiceInterruptedRef.current) {
             const blob = new Blob([buf], { type: "audio/mpeg" });
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
@@ -1005,7 +1008,9 @@ export default function App() {
           }
         }
       } catch {}
-      if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle");
+      if (!voiceInterruptedRef.current) {
+        if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle");
+      }
       return;
     }
 
@@ -1014,16 +1019,65 @@ export default function App() {
     let pending = "";
     let audioChain: Promise<void> = Promise.resolve();
     let spokFirst = false;
+    let interruptMonitorStarted = false;
+
+    // Moniteur d'interruption : écoute le micro pendant que l'IA parle
+    const startInterruptMonitor = async () => {
+      if (interruptMonitorStarted) return;
+      interruptMonitorStarted = true;
+      let stream: MediaStream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+      catch { return; }
+      const audioCtx = new AudioContext();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      const freqData = new Uint8Array(analyser.frequencyBinCount);
+      let voiceStart = 0;
+      let stopped = false;
+      const cleanup = () => {
+        if (stopped) return;
+        stopped = true;
+        try { audioCtx.close(); } catch {}
+        stream.getTracks().forEach(t => t.stop());
+        interruptCleanupRef.current = null;
+      };
+      interruptCleanupRef.current = cleanup;
+      const THRESHOLD = 22;
+      const DELAY_MS = 200;
+      const tick = () => {
+        if (stopped || !voiceOpenRef.current || voiceInterruptedRef.current) { cleanup(); return; }
+        analyser.getByteFrequencyData(freqData);
+        const avg = freqData.reduce((a, b) => a + b, 0) / freqData.length;
+        if (avg > THRESHOLD) {
+          if (!voiceStart) voiceStart = Date.now();
+          if (Date.now() - voiceStart >= DELAY_MS) {
+            voiceInterruptedRef.current = true;
+            if (voiceAudioRef.current) { voiceAudioRef.current.pause(); voiceAudioRef.current = null; }
+            cleanup();
+            setVoicePhase("listening");
+            setTimeout(startVoiceListening, 100);
+            return;
+          }
+        } else { voiceStart = 0; }
+        requestAnimationFrame(tick);
+      };
+      tick();
+    };
 
     const speakChunk = (chunk: string) => {
       const stripped = stripMarkdown(chunk).trim();
       if (!stripped) return;
       audioChain = audioChain.then(async () => {
-        if (!voiceOpenRef.current) return;
-        if (!spokFirst) { setVoicePhase("speaking"); spokFirst = true; }
+        if (!voiceOpenRef.current || voiceInterruptedRef.current) return;
+        if (!spokFirst) {
+          setVoicePhase("speaking");
+          spokFirst = true;
+          startInterruptMonitor();
+        }
         try {
           const buf = await synthesizeSpeech(stripped);
-          if (!voiceOpenRef.current) return;
+          if (!voiceOpenRef.current || voiceInterruptedRef.current) return;
           const blob = new Blob([buf], { type: "audio/mpeg" });
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
@@ -1046,7 +1100,6 @@ export default function App() {
           pending += event.content;
           setVoiceResponse(fullContent);
           setMessages(prev => { const msgs=[...prev]; msgs[msgs.length-1]={role:"assistant",content:fullContent}; return msgs; });
-          // Flush complete sentences as they arrive
           let sm: RegExpExecArray | null;
           while ((sm = /[.!?]+\s+|\n\n/.exec(pending))) {
             const chunk = pending.slice(0, sm.index + sm[0].length);
@@ -1062,10 +1115,9 @@ export default function App() {
           }
         }
       }
-      // Flush remaining text (no trailing punctuation)
       if (pending.trim()) speakChunk(pending);
-      // Wait for all audio to finish
       await audioChain;
+      interruptCleanupRef.current?.();
       if (doneData?.actions?.length) {
         for (const action of doneData.actions.slice(0, 3)) {
           if (action.action_type === "create_task" && action.data?.title) { setPendingTask(action.data.title); continue; }
@@ -1076,19 +1128,23 @@ export default function App() {
         }
       }
     } catch (e: any) {
+      interruptCleanupRef.current?.();
       const msg = e?.response?.data?.detail || e?.message || "Erreur réseau";
       setVoiceError(msg);
       if (voiceOpenRef.current) setTimeout(startVoiceListening, 1500);
       return;
     }
-    if (voiceOpenRef.current) startVoiceListening();
-    else setVoicePhase("idle");
+    if (!voiceInterruptedRef.current) {
+      if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle");
+    }
   };
 
   const closeVoice = () => {
     voiceOpenRef.current = false;
+    voiceInterruptedRef.current = true;
     setVoiceOpen(false);
     if (voiceAudioRef.current) { voiceAudioRef.current.pause(); voiceAudioRef.current = null; }
+    interruptCleanupRef.current?.();
     try { recognitionRef.current?.stop?.(); } catch {}
     analyserRef.current = null;
     setVoicePhase("idle");
