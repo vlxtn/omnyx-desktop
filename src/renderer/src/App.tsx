@@ -147,6 +147,8 @@ export default function App() {
   const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+Space");
   const [pendingShortcut, setPendingShortcut] = useState("");
   const [compactMode, setCompactMode] = useState(false);
+  const [compactResponse, setCompactResponse] = useState<string | null>(null);
+  const compactResponseShownRef = useRef(false);
   const [agentTone, setAgentTone] = useState("equilibre");
   const [savingSettings, setSavingSettings] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
@@ -367,6 +369,35 @@ export default function App() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // En mode compact : afficher la dernière réponse dans un panneau flottant
+  useEffect(() => {
+    if (!compactMode) {
+      setCompactResponse(null);
+      compactResponseShownRef.current = false;
+      return;
+    }
+    const last = messages[messages.length - 1];
+    if (last?.role === "assistant" && last.content) {
+      if (!compactResponseShownRef.current) {
+        compactResponseShownRef.current = true;
+        // @ts-ignore
+        window.api?.resizeWindow(isVertical ? 420 : 660, 380);
+        // @ts-ignore
+        window.api?.setResizable(false);
+      }
+      setCompactResponse(last.content);
+    }
+  }, [messages, compactMode, isVertical]);
+
+  const dismissCompactResponse = () => {
+    setCompactResponse(null);
+    compactResponseShownRef.current = false;
+    // @ts-ignore
+    window.api?.resizeWindow(isVertical ? 420 : 660, 80);
+    // @ts-ignore
+    window.api?.setResizable(false);
+  };
 
   // Touche Echap pour fermer la fenêtre (stoppe le mode vocal si actif)
   useEffect(() => {
@@ -1425,6 +1456,7 @@ export default function App() {
               onChange={e => {
                 const v = e.target.value;
                 setInput(v);
+                if (compactMode && compactResponse && v) dismissCompactResponse();
                 // Suggestions d'apps
                 if (v.length >= 2 && installedApps.length > 0) {
                   const q = v.toLowerCase().replace(/^(ouvre|lance|demarre|open)\s+/i, "");
@@ -1661,6 +1693,29 @@ export default function App() {
           </button>}
           {!compactMode && loading && <div style={styles.spinner} />}
         </div>
+
+        {/* Panneau réponse compact */}
+        {compactMode && compactResponse && (
+          <div style={{ display:"flex", flexDirection:"column" as const, height:"calc(100% - 60px)", overflow:"hidden" }}>
+            <div style={{ flex:1, overflowY:"auto" as const, padding:"12px 16px 8px", scrollbarWidth:"thin" as const }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{compactResponse}</ReactMarkdown>
+            </div>
+            <div style={{ display:"flex", gap:6, padding:"8px 14px 10px", borderTop:"1px solid rgba(255,255,255,0.06)", flexShrink:0 }}>
+              <button onClick={dismissCompactResponse} className="no-drag"
+                style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:7, padding:"5px 10px", cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:11, fontFamily:"inherit" }}>
+                Fermer
+              </button>
+              <button onClick={async () => {
+                if (compactResponse) {
+                  await (window.api as any)?.writeClipboard(compactResponse);
+                }
+              }} className="no-drag"
+                style={{ background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)", borderRadius:7, padding:"5px 12px", cursor:"pointer", color:"#a5b4fc", fontSize:11, fontFamily:"inherit" }}>
+                ⎘ Copier
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tout le contenu est masqué en mode compact */}
         {!compactMode && <>
