@@ -115,6 +115,14 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
   return (data.transcript as string) || "";
 }
 
+export async function synthesizeSpeech(text: string): Promise<ArrayBuffer> {
+  const { data } = await api.post("/api/voice/synthesize", { text }, { timeout: 30000 });
+  const binary = atob(data.audio_b64 as string);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
 export async function approveAction(action_id: string, approved: boolean) {
   const { data } = await api.post("/api/actions/approve", { action_id, approved });
   return data;

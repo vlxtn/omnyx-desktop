@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Brain, Clock, FileText, Search, Zap, Smartphone, ArrowLeft, PanelRight, PanelTop, Sparkles, Globe, FolderOpen, ListChecks, Paperclip, Camera, PenLine, MousePointer2, Settings, Minimize2, Maximize2, CornerDownLeft, Copy, Check } from "lucide-react";
 import logoImg from "./assets/logo.png";
 import { useT } from "./i18n";
-import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, approveAction, transcribeAudio, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
+import { sendMessage, sendMessageStream, analyzeContent, analyzeImage, login, getTasks, completeTask, createTask, approveAction, transcribeAudio, synthesizeSpeech, Task, getConversations, getConversationMessages, searchConversations, SearchResult, Conversation, api, uploadFile } from "./api";
 import { fetchStale } from "./stale";
 import { detectContext, AppContext } from "./contexts";
 import { generateSuggestions } from "./suggestions";
@@ -116,6 +116,7 @@ export default function App() {
   const voiceOpenRef = useRef(false);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [pendingClipboardImage, setPendingClipboardImage] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -928,7 +929,7 @@ export default function App() {
     let hasSpoken = false;
     let stopped = false;
     const THRESHOLD = 8;
-    const SILENCE_MS = 1800;
+    const SILENCE_MS = 1000;
     const MAX_MS = 25000;
     const t0 = Date.now();
 
@@ -955,20 +956,61 @@ export default function App() {
     setMessages(prev => [...prev, { role: "user" as const, content: text }]);
     let fullContent = "";
     let doneData: any = null;
+    let pending = "";
+    let audioChain: Promise<void> = Promise.resolve();
+    let spokFirst = false;
+
+    const speakChunk = (chunk: string) => {
+      const stripped = stripMarkdown(chunk).trim();
+      if (!stripped) return;
+      audioChain = audioChain.then(async () => {
+        if (!voiceOpenRef.current) return;
+        if (!spokFirst) { setVoicePhase("speaking"); spokFirst = true; }
+        try {
+          const buf = await synthesizeSpeech(stripped);
+          if (!voiceOpenRef.current) return;
+          const blob = new Blob([buf], { type: "audio/mpeg" });
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          voiceAudioRef.current = audio;
+          await new Promise<void>((resolve) => {
+            audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+            audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+            audio.play().catch(() => resolve());
+          });
+        } catch {}
+      });
+    };
+
     try {
       setMessages(prev => [...prev, { role: "assistant" as const, content: "" }]);
       for await (const event of sendMessageStream(text, "executive", activeConversationId)) {
         if (event.type === "start" && event.conversation_id) setActiveConversationId(event.conversation_id);
         else if (event.type === "delta") {
           fullContent += event.content;
+          pending += event.content;
           setVoiceResponse(fullContent);
-          setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:fullContent}; return m; });
+          setMessages(prev => { const msgs=[...prev]; msgs[msgs.length-1]={role:"assistant",content:fullContent}; return msgs; });
+          // Flush complete sentences as they arrive
+          let sm: RegExpExecArray | null;
+          while ((sm = /[.!?]+\s+|\n\n/.exec(pending))) {
+            const chunk = pending.slice(0, sm.index + sm[0].length);
+            pending = pending.slice(chunk.length);
+            speakChunk(chunk);
+          }
         } else if (event.type === "done") {
           doneData = event;
-          if (event.clean_content) { fullContent = event.clean_content; setVoiceResponse(fullContent);
-            setMessages(prev => { const m=[...prev]; m[m.length-1]={role:"assistant",content:fullContent}; return m; }); }
+          if (event.clean_content) {
+            fullContent = event.clean_content;
+            setVoiceResponse(fullContent);
+            setMessages(prev => { const msgs=[...prev]; msgs[msgs.length-1]={role:"assistant",content:fullContent}; return msgs; });
+          }
         }
       }
+      // Flush remaining text (no trailing punctuation)
+      if (pending.trim()) speakChunk(pending);
+      // Wait for all audio to finish
+      await audioChain;
       if (doneData?.actions?.length) {
         for (const action of doneData.actions.slice(0, 3)) {
           if (action.action_type === "create_task" && action.data?.title) { setPendingTask(action.data.title); continue; }
@@ -984,19 +1026,14 @@ export default function App() {
       if (voiceOpenRef.current) setTimeout(startVoiceListening, 1500);
       return;
     }
-    setVoicePhase("speaking");
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(stripMarkdown(fullContent || "Désolé, je n'ai pas compris."));
-    utter.lang = "fr-FR"; utter.rate = 1.05;
-    utter.onend = () => { if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle"); };
-    utter.onerror = () => { if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle"); };
-    window.speechSynthesis.speak(utter);
+    if (voiceOpenRef.current) startVoiceListening();
+    else setVoicePhase("idle");
   };
 
   const closeVoice = () => {
     voiceOpenRef.current = false;
     setVoiceOpen(false);
-    window.speechSynthesis.cancel();
+    if (voiceAudioRef.current) { voiceAudioRef.current.pause(); voiceAudioRef.current = null; }
     try { recognitionRef.current?.stop?.(); } catch {}
     analyserRef.current = null;
     setVoicePhase("idle");
