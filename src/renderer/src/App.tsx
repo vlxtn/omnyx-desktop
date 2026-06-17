@@ -520,6 +520,9 @@ export default function App() {
     if (hasTakeScreenshot) {
       try {
         // @ts-ignore
+        window.api?.hideWindow();
+        await new Promise(r => setTimeout(r, 200));
+        // @ts-ignore
         await window.api?.openUrl("ms-screenclip:");
         return { handled: true, result: "✂️ Outil de capture d'écran ouvert — sélectionne ta zone, elle s'ouvrira dans l'éditeur pour que tu puisses l'annoter et l'enregistrer." };
       } catch {
