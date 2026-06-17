@@ -980,6 +980,35 @@ export default function App() {
     setVoicePhase("thinking");
     setVoiceResponse("");
     setMessages(prev => [...prev, { role: "user" as const, content: text }]);
+
+    // Actions locales en priorité (capture, ouvrir app, URL, tâche, rappel...)
+    const intent = await handleIntent(text);
+    if (intent.handled) {
+      const result = intent.result || "";
+      setMessages(prev => [...prev, { role: "assistant" as const, content: result }]);
+      setVoiceResponse(result);
+      setVoicePhase("speaking");
+      try {
+        const stripped = stripMarkdown(result).slice(0, 500).trim();
+        if (stripped) {
+          const buf = await synthesizeSpeech(stripped);
+          if (voiceOpenRef.current) {
+            const blob = new Blob([buf], { type: "audio/mpeg" });
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            voiceAudioRef.current = audio;
+            await new Promise<void>((resolve) => {
+              audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+              audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+              audio.play().catch(() => resolve());
+            });
+          }
+        }
+      } catch {}
+      if (voiceOpenRef.current) startVoiceListening(); else setVoicePhase("idle");
+      return;
+    }
+
     let fullContent = "";
     let doneData: any = null;
     let pending = "";
