@@ -382,7 +382,7 @@ export default function App() {
       if (!compactResponseShownRef.current) {
         compactResponseShownRef.current = true;
         // @ts-ignore
-        window.api?.resizeWindow(isVertical ? 420 : 660, 380);
+        window.api?.resizeWindow(isVertical ? 420 : 660, 500);
         // @ts-ignore
         window.api?.setResizable(false);
       }
@@ -1696,8 +1696,8 @@ export default function App() {
 
         {/* Panneau réponse compact */}
         {compactMode && compactResponse && (
-          <div style={{ display:"flex", flexDirection:"column" as const, overflow:"hidden" }}>
-            <div style={{ maxHeight:280, overflowY:"auto" as const, padding:"12px 16px 8px", scrollbarWidth:"thin" as const, color:"#e2e8f0", fontSize:13, lineHeight:1.6 }}>
+          <div style={{ display:"flex", flexDirection:"column" as const }}>
+            <div style={{ height:394, overflowY:"scroll" as const, padding:"12px 16px 8px", scrollbarWidth:"thin" as const, color:"#e2e8f0", fontSize:13, lineHeight:1.6 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{compactResponse}</ReactMarkdown>
             </div>
             <div style={{ display:"flex", gap:6, padding:"8px 14px 10px", borderTop:"1px solid rgba(255,255,255,0.06)", flexShrink:0 }}>
