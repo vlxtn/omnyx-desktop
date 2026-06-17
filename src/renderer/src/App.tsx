@@ -107,6 +107,8 @@ export default function App() {
   const [attachedFile, setAttachedFile] = useState<{ name: string; type: "image" | "text"; content?: string; base64?: string; mime_type?: string } | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [playingIdx, setPlayingIdx] = useState<number | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voicePhase, setVoicePhase] = useState<"idle"|"listening"|"thinking"|"speaking">("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
@@ -1984,9 +1986,37 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Boutons copier + épingler */}
+                {/* Boutons copier + écouter + épingler */}
                 {m.role === "assistant" && (
                   <div style={{ marginTop:6, display:"flex", gap:5 }}>
+                    <button
+                      title={playingIdx === i ? "Arrêter" : "Écouter la réponse"}
+                      onClick={async () => {
+                        if (playingIdx === i) {
+                          ttsAudioRef.current?.pause();
+                          ttsAudioRef.current = null;
+                          setPlayingIdx(null);
+                          return;
+                        }
+                        if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+                        setPlayingIdx(i);
+                        try {
+                          const { synthesizeSpeech } = await import("./api");
+                          const plain = m.content.replace(/```[\s\S]*?```/g, "").replace(/[#*_`>]/g, "").trim().slice(0, 1000);
+                          const buf = await synthesizeSpeech(plain);
+                          const audio = new Audio(URL.createObjectURL(new Blob([buf], { type:"audio/mpeg" })));
+                          ttsAudioRef.current = audio;
+                          audio.onended = () => { setPlayingIdx(null); ttsAudioRef.current = null; };
+                          audio.onerror = () => { setPlayingIdx(null); ttsAudioRef.current = null; };
+                          audio.play();
+                        } catch { setPlayingIdx(null); }
+                      }}
+                      className="ao-action-btn"
+                      style={{ display:"flex", alignItems:"center", gap:5, background: playingIdx === i ? "rgba(52,211,153,0.15)" : "rgba(255,255,255,0.05)", border: playingIdx === i ? "1px solid rgba(52,211,153,0.4)" : "1px solid rgba(255,255,255,0.08)", borderRadius:7, padding:"4px 9px", cursor:"pointer", transition:"all 0.15s", color: playingIdx === i ? "#34d399" : "rgba(255,255,255,0.35)", fontSize:11, fontFamily:"inherit" }}>
+                      {playingIdx === i
+                        ? <Volume2 size={12} color="#34d399" style={{ animation:"pulse 1s ease-in-out infinite" }} />
+                        : <Volume2 size={12} color="rgba(255,255,255,0.35)" />}
+                    </button>
                     <button
                       title="Copier la réponse"
                       onClick={async () => { await (window.api as any)?.writeClipboard(m.content); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 1500); }}
@@ -2802,13 +2832,15 @@ export default function App() {
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: timerOpen || timerRunning ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: timerOpen || timerRunning ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0 }}>
               <span style={{ fontSize:13, lineHeight:1 }}>⏱</span>
             </button>
-            {/* Discussion vocale */}
+            {/* Discussion vocale — désactivée temporairement, garder le code */}
+            {false && (
             <button title="" className="no-drag ao-icon-btn"
               onMouseEnter={e => showTip(e, "Discussion vocale")} onMouseLeave={hideTip}
               onClick={() => { voiceOpenRef.current = true; setVoiceOpen(true); setTimeout(startVoiceListening, 350); }}
               style={{ display:"flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, cursor:"pointer", border: voiceOpen ? `1px solid ${th.accent}73` : "1px solid rgba(255,255,255,0.08)", background: voiceOpen ? th.accent + "26" : "rgba(255,255,255,0.04)", flexShrink:0, transition:"all 0.2s" }}>
               <Mic size={14} color={voiceOpen ? th.accent : "rgba(255,255,255,0.45)"} style={voiceOpen ? { filter:`drop-shadow(0 0 5px ${th.accent})`, transition:"all 0.2s" } : { transition:"all 0.2s" }} />
             </button>
+            )}
             {/* Mode compact */}
             <button title="" className="no-drag ao-icon-btn"
               onMouseEnter={e => showTip(e, compactMode ? "Agrandir" : "Mode compact")} onMouseLeave={hideTip}
@@ -2852,8 +2884,8 @@ export default function App() {
           </div>
         </div>}
 
-        {/* ── Overlay discussion vocale — placé EN DERNIER pour passer au-dessus du drag region ── */}
-        {voiceOpen && (
+        {/* ── Overlay discussion vocale — désactivé temporairement, garder le code ── */}
+        {false && voiceOpen && (
           <div className="no-drag" style={{ position:"absolute", inset:0, zIndex:500, background:"rgba(8,8,18,0.97)", backdropFilter:"blur(16px)", display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center", gap:22, borderRadius:"inherit" }}>
             <button onClick={closeVoice} className="no-drag" style={{ position:"absolute" as const, top:14, right:14, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, width:28, height:28, cursor:"pointer", color:"rgba(255,255,255,0.4)", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
             <span style={{ position:"absolute" as const, top:18, left:20, fontSize:10, fontWeight:700, color:th.accent + "80", textTransform:"uppercase" as const, letterSpacing:"0.12em" }}>Discussion vocale</span>
