@@ -593,7 +593,9 @@ export default function App() {
     const hasOpen = OPEN_WORDS.some(w => t.includes(norm(w)));
     const hasStrongOpen = STRONG_OPEN_WORDS.some(w => t.includes(norm(w)));
     const hasFile = FILE_WORDS.some(w => t.includes(norm(w)));
-    const looksLikeUrl = /\.(com|fr|io|net|org|co|app|dev)/.test(t) || t.includes("http") || t.includes("www");
+    // Ne détecter une URL que si le message est court (≤5 mots) ou contient http/www explicitement
+    const looksLikeUrl = t.includes("http") || t.includes("www") ||
+      (t.split(/\s+/).length <= 5 && /\.(com|fr|io|net|org|co|app|dev)/.test(t));
 
     // Detect app anywhere in the text
     const foundAppKey = Object.keys(APP_MAP).sort((a, b) => b.length - a.length).find(k => t.includes(norm(k)));
